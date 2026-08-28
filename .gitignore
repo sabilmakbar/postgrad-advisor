@@ -1,0 +1,11 @@
+# dev/ and docs/ excluded locally via .git/info/exclude (owner keeps engagement
+# records out of git); this file covers code/runtime ignores only
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# local data that may contain personal info
+data/cv/
