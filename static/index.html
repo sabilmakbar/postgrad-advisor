@@ -47,7 +47,7 @@ function setBusy(busy) {
   if (!busy && !over) msg.focus();
 }
 
-// One SSE event block ("event: x" + "data: ..." lines) -> handler call.
+// One SSE event block ("event: x" + "data: ..." lines) -> per-turn state.
 function handleEvent(block, state) {
   let event = "message", data = [];
   for (const line of block.split("\n")) {
@@ -55,23 +55,45 @@ function handleEvent(block, state) {
     else if (line.startsWith("data: ")) data.push(line.slice(6));
   }
   const text = data.join("\n");
-  if (event === "token") {
-    if (!state.draft) state.draft = add("ai", "");
-    state.draft.textContent += text;
-    state.draft.scrollIntoView();
-  } else if (event === "message") {
-    if (state.draft) { state.draft.remove(); state.draft = null; }
-    add("ai", text);
-  } else if (event === "error") {
-    add("error", text);
-  } else if (event === "done" && text === "over") {
-    over = true;
-  }
+  if (event === "token") state.queue += text;
+  else if (event === "message") state.finals.push(["ai", text]);
+  else if (event === "error") state.finals.push(["error", text]);
+  else if (event === "done" && text === "over") over = true;
+}
+
+// Streamed tokens paint from a queue at a readable pace, not per network
+// event: free-tier models answer a short question in one <150ms burst after a
+// silent prefix (rate limiter + parse), so per-event painting is an invisible
+// blob. The draft bubble opens at turn start; code-rendered turns (shortlist,
+// echo, verdicts) never queue tokens and land as instant blocks via finals.
+function startPainter(state) {
+  return setInterval(() => {
+    if (state.queue) {
+      const n = Math.max(2, Math.ceil(state.queue.length / 40));  // catch up on long backlogs
+      state.draft.textContent += state.queue.slice(0, n);
+      state.queue = state.queue.slice(n);
+      state.draft.scrollIntoView();
+    } else if (state.closed) {
+      finish(state);
+    }
+  }, 25);
+}
+
+function finish(state) {
+  clearInterval(state.painter);
+  // Replace the painted draft with the authoritative messages; keep it when
+  // nothing replaces it (mid-stream error: painted prose + error line stay).
+  if (state.finals.some(([role]) => role === "ai") || !state.draft.textContent)
+    state.draft.remove();
+  for (const [role, text] of state.finals) add(role, text);
+  setBusy(false);
 }
 
 async function send(message) {
   setBusy(true);
   if (message) add("user", message);
+  const state = { draft: add("ai", ""), queue: "", finals: [], closed: false };
+  state.painter = startPainter(state);
   try {
     const res = await fetch("/chat", {
       method: "POST",
@@ -80,7 +102,6 @@ async function send(message) {
     });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    const state = { draft: null };
     let buf = "";
     for (;;) {
       const { done, value } = await reader.read();
@@ -91,10 +112,10 @@ async function send(message) {
       blocks.forEach((b) => handleEvent(b, state));
     }
   } catch (e) {
-    add("error", "Lost the connection to the server — is it still running?");
-  } finally {
-    setBusy(false);
+    state.queue = "";  // connection lost: show the error now, not after a drain
+    state.finals.push(["error", "Lost the connection to the server — is it still running?"]);
   }
+  state.closed = true;  // painter drains the queue, then finish() runs
 }
 
 form.addEventListener("submit", (e) => {
