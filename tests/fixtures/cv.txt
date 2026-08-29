@@ -1,0 +1,11 @@
+Jane Synthetic — Curriculum Vitae (fictional test fixture)
+
+Education
+- BSc Computer Science, University of Testland, 2022–2026
+- GPA: 3.7 / 4.0
+
+Publications
+- "A Study of Entirely Synthetic Data" — SynthConf 2025
+
+English
+- IELTS 7.5 (2026)
