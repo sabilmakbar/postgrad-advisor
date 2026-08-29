@@ -178,6 +178,18 @@ def test_structured_light_binds_and_uses_light_ids(monkeypatch):
     assert constructed == list(LIGHT_IDS)
 
 
+def test_structured_chains_are_tagged_nostream(monkeypatch):
+    """Story 006 fix round: structured runs must never enter langgraph's
+    messages-mode stream — raw schema JSON on the chat page otherwise.
+    Paired opposite: the plain chat chain must NOT carry the tag."""
+    from langgraph.constants import TAG_NOSTREAM
+
+    _fake_providers(monkeypatch)
+    for tier in ("light", "heavy"):
+        assert TAG_NOSTREAM in structured(dict, tier=tier).config.get("tags", [])
+    assert TAG_NOSTREAM not in (getattr(chat(), "config", None) or {}).get("tags", [])
+
+
 def test_light_retry_then_fallback_same_seam(monkeypatch):
     # AC 3: light rides the same _compose — transient error retried 3x on the
     # light primary, then falls back to the next LIGHT model, never to heavy.

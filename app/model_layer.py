@@ -19,6 +19,7 @@ from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
+from langgraph.constants import TAG_NOSTREAM
 
 from app.config import settings
 
@@ -274,7 +275,13 @@ def chat(tier: str = "heavy") -> Runnable:
 
 def structured(schema, tier: str = "heavy") -> Runnable:
     """Structured-output chain. Binds the schema per provider model BEFORE
-    composing fallbacks (a composed chain has no `with_structured_output`)."""
+    composing fallbacks (a composed chain has no `with_structured_output`).
+
+    Tagged ``nostream``: langgraph's messages-mode streaming skips tagged runs,
+    so raw schema JSON never enters a chat token stream (story 006 fix round —
+    the providers' ``ls_structured_output_format`` marker lands in callback
+    *options*, never in the run metadata that stream filters can see, so
+    downstream filtering alone cannot identify these runs)."""
     return _tier_chain(
         tier, lambda models: [(m.with_structured_output(schema), t) for m, t in models]
-    )
+    ).with_config(tags=[TAG_NOSTREAM])
