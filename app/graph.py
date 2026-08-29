@@ -80,7 +80,9 @@ def _interviewer(state: InterviewState) -> dict:
     reply = chat(tier="heavy").invoke(
         [("system", f"{PERSONA}\n\n{INTERVIEWER_INSTRUCTIONS}"), *messages, ("system", context)]
     )
-    messages.append(("ai", decline + reply.content))
+    # .text, not .content: under the web chat's stream_mode="messages" the model
+    # streams internally and the aggregated content can be a block list (story 006)
+    messages.append(("ai", decline + reply.text))
     return {**updates, "messages": messages, "turns": state.turns + 1}
 
 
