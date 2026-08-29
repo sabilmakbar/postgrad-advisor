@@ -1,0 +1,157 @@
+"""Scripted end-to-end conversation over the live web chat (story 006, AC 5).
+
+Burns real free-tier quota, so it lives here and not in pytest. Two runs make
+the cycle-1 exit check:
+
+    uv run python scripts/e2e_scripted.py               # SC-001 (all keys)
+    uv run python scripts/e2e_scripted.py --no-gemini   # SC-004 (Gemini unset)
+
+Each run spawns its own server (--no-gemini overrides GOOGLE_API_KEY with an
+empty value — deleting the env var would not mask the .env file entry), runs
+interview -> shortlist -> CV upload -> verdicts, and asserts the SC-001
+checks plus the SC-005 probability scan on everything the agent said.
+"""
+
+import argparse
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import httpx
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))  # plain `python scripts/...` lacks the repo root
+
+from app.fit import _PROB_RE  # noqa: E402  SC-005: the one probability pattern, reused
+
+PORT = 8016
+CV_FIXTURE = ROOT / "tests" / "fixtures" / "cv.txt"
+
+# Each answer may fill several slots; the last is a catch-all restatement in
+# case earlier parses missed a slot. More answers than this = FAIL (SC-001
+# allows at most 10 agent turns anyway).
+ANSWERS = [
+    "I'm after a research master's in computer science; my focus is natural "
+    "language processing.",
+    "I'd like to study in Europe — ideally the United Kingdom or the Netherlands.",
+    "No hard constraints: budget is flexible and I can start anytime.",
+    "To restate: degree intent masters_research, field computer science, "
+    "target regions United Kingdom and Netherlands.",
+]
+CONFIRM = "Yes, that's all correct."
+
+TOKEN_COUNTS: list[int] = []  # token events per turn, for the AC-2 streaming check
+
+
+def sse_events(response) -> list[tuple[str, str]]:
+    """Parse an SSE body into (event, data) pairs; multiline data rejoined."""
+    events = []
+    for block in response.read().decode().split("\n\n"):
+        event, data = "message", []
+        for line in block.split("\n"):
+            if line.startswith("event: "):
+                event = line[7:]
+            elif line.startswith("data: "):
+                data.append(line[6:])
+        if data:
+            events.append((event, "\n".join(data)))
+    return events
+
+
+def turn(client: httpx.Client, message: str) -> list[str]:
+    """One chat turn; returns the agent's authoritative message texts."""
+    with client.stream("POST", "/chat", json={"message": message}) as response:
+        response.raise_for_status()
+        events = sse_events(response)
+    errors = [d for e, d in events if e == "error"]
+    assert not errors, f"agent turn failed: {errors}"
+    TOKEN_COUNTS.append(sum(1 for e, _ in events if e == "token"))
+    return [d for e, d in events if e == "message"]
+
+
+def run_conversation(client: httpx.Client) -> None:
+    said: list[str] = []  # everything the agent said, for the SC-005 scan
+
+    print("interview:")
+    said += turn(client, "")  # page-load start: opening question
+    shortlist = None
+    agent_turns = 1
+    for answer in ANSWERS:
+        messages = turn(client, answer)
+        said += messages
+        print(f"  turn {agent_turns}: {messages[0][:70]}...")
+        shortlist = next((m for m in messages if m.startswith("Here is your shortlist:")), None)
+        if shortlist:
+            break
+        agent_turns += 1
+    assert shortlist, f"interview did not complete within {len(ANSWERS)} answers"
+    assert agent_turns <= 10, f"interview took {agent_turns} agent turns (SC-001: <=10)"
+
+    assert max(TOKEN_COUNTS) > 1, "agent prose arrived as one blob, never as tokens (AC 2)"
+    print(f"streaming: up to {max(TOKEN_COUNTS)} token events in a turn")
+
+    programs = [ln for ln in shortlist.splitlines() if ln.startswith("- ")]
+    print(f"shortlist: {len(programs)} programs after {agent_turns} agent turns")
+    assert 8 <= len(programs) <= 12, f"shortlist size {len(programs)} (SC-001: 8-12)"
+    assert any("CV" in m for m in said), "no CV request after the shortlist"
+
+    upload = client.post(f"/upload?name={CV_FIXTURE.name}", content=CV_FIXTURE.read_bytes())
+    upload.raise_for_status()
+    said += (echo := turn(client, upload.json()["path"]))
+    assert any("read from your CV" in m for m in echo), f"no CV facts echo in {echo}"
+    print("cv: uploaded, facts echoed")
+
+    said += (final := turn(client, CONFIRM))
+    verdicts = next((m for m in final if m.startswith("Here is how your confirmed")), None)
+    assert verdicts, f"no fit verdicts after confirmation, got {final}"
+    lines = [ln for ln in verdicts.splitlines() if ln.startswith("- ")]
+    assert len(lines) == len(programs), f"{len(lines)} verdicts for {len(programs)} programs"
+    labeled = [ln for ln in lines if any(f": {label}" in ln for label in
+               ("strong", "borderline", "reach", "unknown"))]
+    assert len(labeled) == len(lines), f"unlabeled verdict lines: {set(lines) - set(labeled)}"
+    print(f"verdicts: one per program ({len(lines)}), all labeled")
+
+    hits = [m for m in said if _PROB_RE.search(m)]
+    assert not hits, f"numeric admission odds in agent output (SC-005): {hits}"
+    print("sc-005: zero probability patterns in agent output")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--no-gemini", action="store_true",
+                        help="run with GOOGLE_API_KEY unset (SC-004 fallback proof)")
+    args = parser.parse_args()
+
+    env = dict(os.environ)
+    if args.no_gemini:
+        env["GOOGLE_API_KEY"] = ""  # masks the .env value for the child server
+
+    server = subprocess.Popen(
+        ["uv", "run", "uvicorn", "app.server:app", "--port", str(PORT)],
+        cwd=ROOT, env=env, start_new_session=True,
+    )
+    try:
+        with httpx.Client(base_url=f"http://127.0.0.1:{PORT}",
+                          timeout=httpx.Timeout(600, connect=5)) as client:
+            for _ in range(60):  # readiness: up to 30s
+                if server.poll() is not None:
+                    sys.exit(f"server exited early (is port {PORT} taken?)")
+                try:  # must be OUR page — a stranger on the port also 200s
+                    if "Postgrad Advisor" in client.get("/").raise_for_status().text:
+                        break
+                except httpx.HTTPError:
+                    time.sleep(0.5)
+            else:
+                sys.exit("server never became ready")
+            run_conversation(client)
+        label = "SC-004 (no Gemini)" if args.no_gemini else "SC-001"
+        print(f"PASS: {label} scripted conversation completed end to end")
+    finally:
+        os.killpg(server.pid, signal.SIGTERM)
+
+
+if __name__ == "__main__":
+    main()
