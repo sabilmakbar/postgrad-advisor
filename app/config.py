@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
     cloudflare_api_token: str | None = None
     cloudflare_account_id: str | None = None
+    tavily_api_key: str | None = None  # story 005: requirements search (AD-3)
 
     gemini_model: str = "gemini-3.6-flash"
     groq_model: str = "openai/gpt-oss-120b"
