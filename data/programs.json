@@ -1,0 +1,2287 @@
+{
+  "source": "QS World University Rankings 2026 (topuniversities.com, public pages; personal use); ranks verified 2026-08-29 against QS WUR 2026 full-list mirror (github.com/CheekyRishi/2026-qs-world-university-eda) cross-checked with QS press coverage",
+  "retrieved": "2026-08-29",
+  "universities": [
+    {
+      "university": "Imperial College London",
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "rank": 2,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "medicine",
+        "natural_sciences",
+        "computer_science"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "University of Oxford",
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "rank": 4,
+      "rank_scope": "world",
+      "fields": [
+        "arts_humanities",
+        "social_sciences",
+        "medicine",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "University of Cambridge",
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "rank": 6,
+      "rank_scope": "world",
+      "fields": [
+        "natural_sciences",
+        "engineering",
+        "arts_humanities",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "ETH Zurich",
+      "country": "Switzerland",
+      "continent": "Europe",
+      "rank": 7,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "UCL",
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "rank": 9,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "social_sciences",
+        "arts_humanities",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "EPFL",
+      "country": "Switzerland",
+      "continent": "Europe",
+      "rank": 22,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Technical University of Munich",
+      "country": "Germany",
+      "continent": "Europe",
+      "rank": 22,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "PSL University",
+      "country": "France",
+      "continent": "Europe",
+      "rank": 28,
+      "rank_scope": "world",
+      "fields": [
+        "natural_sciences",
+        "arts_humanities",
+        "economics"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Edinburgh",
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "rank": 34,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "arts_humanities",
+        "computer_science"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "King's College London",
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "rank": 31,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "law",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The University of Manchester",
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "rank": 35,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Institut Polytechnique de Paris",
+      "country": "France",
+      "continent": "Europe",
+      "rank": 41,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "natural_sciences",
+        "economics"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Delft University of Technology",
+      "country": "Netherlands",
+      "continent": "Europe",
+      "rank": 47,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Bristol",
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "rank": 51,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "social_sciences",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "London School of Economics and Political Science",
+      "country": "United Kingdom",
+      "continent": "Europe",
+      "rank": 56,
+      "rank_scope": "world",
+      "fields": [
+        "economics",
+        "social_sciences",
+        "law"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Amsterdam",
+      "country": "Netherlands",
+      "continent": "Europe",
+      "rank": 53,
+      "rank_scope": "world",
+      "fields": [
+        "social_sciences",
+        "economics",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "LMU Munich",
+      "country": "Germany",
+      "continent": "Europe",
+      "rank": 58,
+      "rank_scope": "world",
+      "fields": [
+        "natural_sciences",
+        "medicine",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "KU Leuven",
+      "country": "Belgium",
+      "continent": "Europe",
+      "rank": 60,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "medicine",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Sorbonne University",
+      "country": "France",
+      "continent": "Europe",
+      "rank": 72,
+      "rank_scope": "world",
+      "fields": [
+        "arts_humanities",
+        "natural_sciences",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Heidelberg University",
+      "country": "Germany",
+      "continent": "Europe",
+      "rank": 80,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "natural_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Massachusetts Institute of Technology (MIT)",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 1,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "natural_sciences",
+        "economics"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "Stanford University",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 3,
+      "rank_scope": "world",
+      "fields": [
+        "computer_science",
+        "engineering",
+        "business",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "Harvard University",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 5,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "law",
+        "business",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "California Institute of Technology (Caltech)",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 10,
+      "rank_scope": "world",
+      "fields": [
+        "natural_sciences",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "University of Chicago",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 13,
+      "rank_scope": "world",
+      "fields": [
+        "economics",
+        "social_sciences",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Pennsylvania",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 15,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Cornell University",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 16,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "life_sciences",
+        "business"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of California, Berkeley",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 17,
+      "rank_scope": "world",
+      "fields": [
+        "computer_science",
+        "engineering",
+        "natural_sciences",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Yale University",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 21,
+      "rank_scope": "world",
+      "fields": [
+        "law",
+        "arts_humanities",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Princeton University",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 25,
+      "rank_scope": "world",
+      "fields": [
+        "natural_sciences",
+        "economics",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "McGill University",
+      "country": "Canada",
+      "continent": "North America",
+      "rank": 27,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "law",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Toronto",
+      "country": "Canada",
+      "continent": "North America",
+      "rank": 29,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "computer_science",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Johns Hopkins University",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 24,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "life_sciences",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Columbia University",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 38,
+      "rank_scope": "world",
+      "fields": [
+        "social_sciences",
+        "business",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Michigan-Ann Arbor",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 45,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of British Columbia",
+      "country": "Canada",
+      "continent": "North America",
+      "rank": 40,
+      "rank_scope": "world",
+      "fields": [
+        "life_sciences",
+        "social_sciences",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of California, Los Angeles (UCLA)",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 46,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "social_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "New York University (NYU)",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 55,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "law",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Carnegie Mellon University",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 52,
+      "rank_scope": "world",
+      "fields": [
+        "computer_science",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Northwestern University",
+      "country": "United States",
+      "continent": "North America",
+      "rank": 42,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "National University of Singapore (NUS)",
+      "country": "Singapore",
+      "continent": "Asia",
+      "rank": 8,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "business",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "University of Hong Kong",
+      "country": "Hong Kong SAR",
+      "continent": "Asia",
+      "rank": 11,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "law",
+        "business"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Nanyang Technological University (NTU)",
+      "country": "Singapore",
+      "continent": "Asia",
+      "rank": 12,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "business"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "Peking University",
+      "country": "China (Mainland)",
+      "continent": "Asia",
+      "rank": 14,
+      "rank_scope": "world",
+      "fields": [
+        "natural_sciences",
+        "arts_humanities",
+        "economics"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Tsinghua University",
+      "country": "China (Mainland)",
+      "continent": "Asia",
+      "rank": 17,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "economics"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Fudan University",
+      "country": "China (Mainland)",
+      "continent": "Asia",
+      "rank": 30,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "economics",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The Chinese University of Hong Kong (CUHK)",
+      "country": "Hong Kong SAR",
+      "continent": "Asia",
+      "rank": 32,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Seoul National University",
+      "country": "South Korea",
+      "continent": "Asia",
+      "rank": 38,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "natural_sciences",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The University of Tokyo",
+      "country": "Japan",
+      "continent": "Asia",
+      "rank": 36,
+      "rank_scope": "world",
+      "fields": [
+        "natural_sciences",
+        "engineering",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The Hong Kong University of Science and Technology",
+      "country": "Hong Kong SAR",
+      "continent": "Asia",
+      "rank": 44,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "business",
+        "computer_science"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Shanghai Jiao Tong University",
+      "country": "China (Mainland)",
+      "continent": "Asia",
+      "rank": 47,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "medicine",
+        "business"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Zhejiang University",
+      "country": "China (Mainland)",
+      "continent": "Asia",
+      "rank": 49,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "life_sciences",
+        "computer_science"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "KAIST",
+      "country": "South Korea",
+      "continent": "Asia",
+      "rank": null,
+      "note": "excluded from QS 2026 (survey-canvassing penalty); QS 2025 rank was 53",
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Kyoto University",
+      "country": "Japan",
+      "continent": "Asia",
+      "rank": 57,
+      "rank_scope": "world",
+      "fields": [
+        "natural_sciences",
+        "medicine",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Universiti Malaya",
+      "country": "Malaysia",
+      "continent": "Asia",
+      "rank": 58,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Yonsei University",
+      "country": "South Korea",
+      "continent": "Asia",
+      "rank": 50,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Korea University",
+      "country": "South Korea",
+      "continent": "Asia",
+      "rank": 61,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "law",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "City University of Hong Kong",
+      "country": "Hong Kong SAR",
+      "continent": "Asia",
+      "rank": 63,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "business",
+        "computer_science"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "IIT Delhi",
+      "country": "India",
+      "continent": "Asia",
+      "rank": 123,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "IIT Bombay",
+      "country": "India",
+      "continent": "Asia",
+      "rank": 129,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The University of Melbourne",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 19,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "law",
+        "social_sciences",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "high"
+    },
+    {
+      "university": "The University of New South Wales (UNSW Sydney)",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 20,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "business",
+        "law"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The University of Sydney",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 25,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "arts_humanities",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The Australian National University",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 32,
+      "rank_scope": "world",
+      "fields": [
+        "social_sciences",
+        "natural_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Monash University",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 36,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "engineering",
+        "business"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The University of Queensland",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 42,
+      "rank_scope": "world",
+      "fields": [
+        "life_sciences",
+        "engineering",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The University of Western Australia",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 77,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "life_sciences",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The University of Adelaide",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 82,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "life_sciences",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Auckland",
+      "country": "New Zealand",
+      "continent": "Oceania",
+      "rank": 65,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Technology Sydney",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 96,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "business"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Macquarie University",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 138,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "social_sciences",
+        "life_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "RMIT University",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 125,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Queensland University of Technology",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 226,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "business",
+        "computer_science"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Curtin University",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 183,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "business"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "University of Wollongong",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 184,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "computer_science",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "The University of Newcastle, Australia",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 227,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "University of Otago",
+      "country": "New Zealand",
+      "continent": "Oceania",
+      "rank": 197,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "life_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Deakin University",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 207,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Griffith University",
+      "country": "Australia",
+      "continent": "Oceania",
+      "rank": 268,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Victoria University of Wellington",
+      "country": "New Zealand",
+      "continent": "Oceania",
+      "rank": 240,
+      "rank_scope": "world",
+      "fields": [
+        "law",
+        "arts_humanities",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "University of Cape Town",
+      "country": "South Africa",
+      "continent": "Africa",
+      "rank": 150,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "social_sciences",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of the Witwatersrand",
+      "country": "South Africa",
+      "continent": "Africa",
+      "rank": 291,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "engineering",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Stellenbosch University",
+      "country": "South Africa",
+      "continent": "Africa",
+      "rank": 302,
+      "rank_scope": "world",
+      "fields": [
+        "life_sciences",
+        "medicine",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Johannesburg",
+      "country": "South Africa",
+      "continent": "Africa",
+      "rank": 308,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "engineering",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Cairo University",
+      "country": "Egypt",
+      "continent": "Africa",
+      "rank": 347,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "engineering",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "University of Pretoria",
+      "country": "South Africa",
+      "continent": "Africa",
+      "rank": 362,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "law",
+        "life_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "The American University in Cairo",
+      "country": "Egypt",
+      "continent": "Africa",
+      "rank": 381,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "social_sciences",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Ain Shams University",
+      "country": "Egypt",
+      "continent": "Africa",
+      "rank": 542,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "University of KwaZulu-Natal",
+      "country": "South Africa",
+      "continent": "Africa",
+      "rank": 558,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "social_sciences",
+        "life_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Alexandria University",
+      "country": "Egypt",
+      "continent": "Africa",
+      "rank": "781-790",
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Mansoura University",
+      "country": "Egypt",
+      "continent": "Africa",
+      "rank": "1001-1200",
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "life_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "North-West University",
+      "country": "South Africa",
+      "continent": "Africa",
+      "rank": "951-1000",
+      "rank_scope": "world",
+      "fields": [
+        "social_sciences",
+        "life_sciences",
+        "business"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universite Mohammed V de Rabat",
+      "country": "Morocco",
+      "continent": "Africa",
+      "rank": "1201-1400",
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "social_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "University of Nairobi",
+      "country": "Kenya",
+      "continent": "Africa",
+      "rank": "1001-1200",
+      "rank_scope": "world",
+      "fields": [
+        "social_sciences",
+        "medicine",
+        "life_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Makerere University",
+      "country": "Uganda",
+      "continent": "Africa",
+      "rank": "1001-1200",
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "social_sciences",
+        "life_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "University of Ghana",
+      "country": "Ghana",
+      "continent": "Africa",
+      "rank": "851-900",
+      "rank_scope": "world",
+      "fields": [
+        "social_sciences",
+        "life_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "University of Lagos",
+      "country": "Nigeria",
+      "continent": "Africa",
+      "rank": "1001-1200",
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "law",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "University of Ibadan",
+      "country": "Nigeria",
+      "continent": "Africa",
+      "rank": "1001-1200",
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "life_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Addis Ababa University",
+      "country": "Ethiopia",
+      "continent": "Africa",
+      "rank": "851-900",
+      "rank_scope": "world",
+      "fields": [
+        "social_sciences",
+        "life_sciences",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Rhodes University",
+      "country": "South Africa",
+      "continent": "Africa",
+      "rank": "1001-1200",
+      "rank_scope": "world",
+      "fields": [
+        "arts_humanities",
+        "social_sciences",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidade de Sao Paulo (USP)",
+      "country": "Brazil",
+      "continent": "South America",
+      "rank": 108,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "engineering",
+        "life_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Pontificia Universidad Catolica de Chile",
+      "country": "Chile",
+      "continent": "South America",
+      "rank": 116,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "medicine",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Universidad de Buenos Aires (UBA)",
+      "country": "Argentina",
+      "continent": "South America",
+      "rank": 84,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "law",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Universidad de Chile",
+      "country": "Chile",
+      "continent": "South America",
+      "rank": 173,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "natural_sciences",
+        "social_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Universidade Estadual de Campinas (Unicamp)",
+      "country": "Brazil",
+      "continent": "South America",
+      "rank": 233,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "natural_sciences",
+        "life_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Universidad de los Andes",
+      "country": "Colombia",
+      "continent": "South America",
+      "rank": 212,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "economics",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "medium"
+    },
+    {
+      "university": "Universidad Nacional de Colombia",
+      "country": "Colombia",
+      "continent": "South America",
+      "rank": 259,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "social_sciences",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Pontificia Universidad Catolica del Peru",
+      "country": "Peru",
+      "continent": "South America",
+      "rank": 345,
+      "rank_scope": "world",
+      "fields": [
+        "social_sciences",
+        "arts_humanities",
+        "engineering"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidade Federal do Rio de Janeiro (UFRJ)",
+      "country": "Brazil",
+      "continent": "South America",
+      "rank": 317,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "natural_sciences",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidade Estadual Paulista (UNESP)",
+      "country": "Brazil",
+      "continent": "South America",
+      "rank": 450,
+      "rank_scope": "world",
+      "fields": [
+        "life_sciences",
+        "natural_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Pontificia Universidad Javeriana",
+      "country": "Colombia",
+      "continent": "South America",
+      "rank": 371,
+      "rank_scope": "world",
+      "fields": [
+        "social_sciences",
+        "medicine",
+        "law"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidad de Concepcion",
+      "country": "Chile",
+      "continent": "South America",
+      "rank": 613,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "life_sciences",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidad de Santiago de Chile (USACH)",
+      "country": "Chile",
+      "continent": "South America",
+      "rank": 490,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "natural_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Pontificia Universidade Catolica do Rio de Janeiro (PUC-Rio)",
+      "country": "Brazil",
+      "continent": "South America",
+      "rank": 571,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "social_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidade Federal de Minas Gerais (UFMG)",
+      "country": "Brazil",
+      "continent": "South America",
+      "rank": 595,
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "engineering",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidade Federal do Rio Grande do Sul (UFRGS)",
+      "country": "Brazil",
+      "continent": "South America",
+      "rank": 691,
+      "rank_scope": "world",
+      "fields": [
+        "engineering",
+        "life_sciences",
+        "medicine"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidade Federal de Sao Paulo (Unifesp)",
+      "country": "Brazil",
+      "continent": "South America",
+      "rank": "801-850",
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "life_sciences"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidad Nacional de La Plata",
+      "country": "Argentina",
+      "continent": "South America",
+      "rank": 458,
+      "rank_scope": "world",
+      "fields": [
+        "natural_sciences",
+        "social_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidad Austral",
+      "country": "Argentina",
+      "continent": "South America",
+      "rank": 519,
+      "rank_scope": "world",
+      "fields": [
+        "business",
+        "medicine",
+        "law"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    },
+    {
+      "university": "Universidad Nacional Mayor de San Marcos",
+      "country": "Peru",
+      "continent": "South America",
+      "rank": "951-1000",
+      "rank_scope": "world",
+      "fields": [
+        "medicine",
+        "social_sciences",
+        "arts_humanities"
+      ],
+      "degree_types": [
+        "masters_course",
+        "masters_research",
+        "phd"
+      ],
+      "verified": true,
+      "confidence": "low"
+    }
+  ]
+}
