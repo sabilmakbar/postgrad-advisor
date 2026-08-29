@@ -13,6 +13,7 @@ checks plus the SC-005 probability scan on everything the agent said.
 """
 
 import argparse
+import json
 import os
 import signal
 import subprocess
@@ -43,7 +44,19 @@ ANSWERS = [
 ]
 CONFIRM = "Yes, that's all correct."
 
+# Fix round: a vague answer must get a probing question back — never silence,
+# never the slot parser's raw JSON (the user-reported defect).
+VAGUE = "Hmm, honestly I'm not sure yet — something after my bachelor's, I guess?"
+
 TOKEN_COUNTS: list[int] = []  # token events per turn, for the AC-2 streaming check
+
+
+def bare_json(text: str) -> bool:
+    """Structured-output leak signature: the text is a bare JSON object."""
+    try:
+        return isinstance(json.loads(text), dict)
+    except ValueError:
+        return False
 
 
 def sse_events(response) -> list[tuple[str, str]]:
@@ -69,7 +82,14 @@ def turn(client: httpx.Client, message: str) -> list[str]:
     errors = [d for e, d in events if e == "error"]
     assert not errors, f"agent turn failed: {errors}"
     TOKEN_COUNTS.append(sum(1 for e, _ in events if e == "token"))
-    return [d for e, d in events if e == "message"]
+    # Fix round: no structured-output JSON may reach the page — neither in the
+    # assembled token draft nor in the authoritative messages.
+    draft = "".join(d for e, d in events if e == "token")
+    assert not draft.lstrip().startswith("{"), f"JSON leaked into the token stream: {draft[:100]}"
+    messages = [d for e, d in events if e == "message"]
+    leaks = [m for m in messages if bare_json(m)]
+    assert not leaks, f"structured-output JSON replayed as a message: {leaks}"
+    return messages
 
 
 def run_conversation(client: httpx.Client) -> None:
@@ -77,8 +97,19 @@ def run_conversation(client: httpx.Client) -> None:
 
     print("interview:")
     said += turn(client, "")  # page-load start: opening question
+
+    # Fix round: a vague answer must end with a rendered question — non-JSON
+    # prose with a question mark — never silence or parser output.
+    probe = turn(client, VAGUE)
+    said += probe
+    assert probe, "vague answer got silence (no agent message)"
+    assert probe[-1].rstrip().endswith("?"), (
+        f"vague-answer turn did not end in a question: {probe[-1]!r}"
+    )
+    print(f"  vague answer -> probing question: {probe[-1][:70]}...")
+
     shortlist = None
-    agent_turns = 1
+    agent_turns = 2  # opening question + the vague-answer follow-up
     for answer in ANSWERS:
         messages = turn(client, answer)
         said += messages
