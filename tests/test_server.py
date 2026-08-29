@@ -79,6 +79,28 @@ def test_stream_tokens_then_authoritative_messages(client):
     assert body.rstrip().endswith("event: done\ndata:")  # next pending: not "over"
 
 
+def test_parser_json_in_state_never_replays_to_the_page(client):
+    """Fix round: a message whose content is bare internal-schema JSON must be
+    dropped from the authoritative replay; the real question (paired positive)
+    survives."""
+    states = [
+        SimpleNamespace(values={"messages": []}, next=("interviewer",)),
+        SimpleNamespace(
+            values={
+                "messages": [
+                    ("ai", '{"degree_intent": "masters_coursework"}'),
+                    ("ai", "Which field would you like to study?"),
+                ]
+            },
+            next=("interviewer",),
+        ),
+    ]
+    body = _start(client(FakeGraph((), states))).text
+
+    assert '{"degree_intent"' not in body  # seeded parser message dropped
+    assert "event: message\ndata: Which field would you like to study?\n" in body
+
+
 def test_exhausted_providers_become_friendly_sse_error(client):
     """AC 4: AllProvidersExhausted -> plain-language quota message, no trace."""
     graph = FakeGraph(exc=AllProvidersExhausted("boom"))

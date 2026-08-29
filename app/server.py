@@ -8,6 +8,7 @@ feeds into story 005's intake as a normal chat message.
 Run: ``uv run uvicorn app.server:app``.
 """
 
+import json
 import logging
 from pathlib import Path
 from uuid import uuid4
@@ -42,15 +43,29 @@ def _sse(event: str, data: str) -> str:
     return f"event: {event}\n{lines}\n"
 
 
+def _internal_json(text: str) -> bool:
+    """True for structured-output shapes: a bare JSON object. That covers every
+    internal schema (SlotUpdate, CVFacts, picks, verdicts) — the agent's real
+    messages are prose and never a bare JSON object. Belt-and-braces with the
+    model layer's ``nostream`` tag: parser output must never reach the page
+    (story 006 fix round)."""
+    try:
+        return isinstance(json.loads(text), dict)
+    except ValueError:
+        return False
+
+
 async def _turn(payload, config: dict, seen: int):
     """SSE events for one graph turn: live tokens while the heavy chat
     generates (AC 2), then the authoritative new messages — code-rendered
     texts and the decline prefix never stream — then done.
 
-    Structured-output calls (slot parser, shortlist picks, fit verdicts) also
-    emit chunks under messages mode; their runs carry the
-    ``ls_structured_output_format`` metadata marker, so their raw JSON/tool
-    tokens are filtered out of the page stream.
+    Structured-output calls (slot parser, shortlist picks, fit verdicts) are
+    kept off the page three ways (story 006 fix round): the model layer tags
+    them ``nostream`` so messages mode skips them at the source; any chunk that
+    still carries the ``ls_structured_output_format`` metadata marker is
+    filtered here; and the authoritative replay drops anything that parses as
+    internal-schema JSON (``_internal_json``).
     """
     interrupts: list[str] = []
     try:
@@ -77,9 +92,12 @@ async def _turn(payload, config: dict, seen: int):
     snapshot = GRAPH.get_state(config)
     new = [t for role, t in snapshot.values.get("messages", [])[seen:] if role == "ai"]
     for text in new:
+        if _internal_json(text):  # parser output never replays to the user
+            logger.warning("dropped internal JSON from the chat replay: %.100s", text)
+            continue
         yield _sse("message", text)
     for value in interrupts:  # a pause whose prompt isn't in messages yet (CV ask)
-        if value not in new:
+        if value not in new and not _internal_json(value):
             yield _sse("message", value)
     yield _sse("done", "" if snapshot.next else "over")
 
