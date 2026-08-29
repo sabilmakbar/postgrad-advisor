@@ -7,6 +7,17 @@ from pydantic import BaseModel, Field
 DegreeIntent = Literal["masters_coursework", "masters_research", "phd"]
 
 
+class ShortlistEntry(BaseModel):
+    """One shortlisted program (story 004). Identity fields come from the
+    dataset row the LLM's pick index maps back to — never from free LLM text."""
+
+    university: str
+    country: str
+    rank_context: str  # "QS world rank 2"; for null-rank rows, the dataset note
+    degree_type: str  # dataset degree type matching the interview intent
+    why_it_fits: str  # one-line rationale grounded in the interview answers
+
+
 class InterviewState(BaseModel):
     """Filled progressively during the interview; complete once degree intent,
     field, and at least one target region are captured."""
@@ -19,7 +30,8 @@ class InterviewState(BaseModel):
     messages: list[tuple[str, str]] = []  # (role, content) conversation log
     turns: int = 0  # agent question turns taken; capped in graph logic
     ended: bool = False  # turn cap hit before the state completed
-    handed_off: bool = False  # set by the handoff node (story 004 consumes)
+    handed_off: bool = False  # set by the shortlister node (story 004)
+    shortlist: list[ShortlistEntry] = []  # built by the shortlister node
 
     def is_complete(self) -> bool:
         return bool(self.degree_intent and self.field and self.target_regions)
