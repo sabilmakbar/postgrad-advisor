@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Postgrad Advisor</title>
+<style>
+  /* readable, nothing more (story 006 out-of-scope: styling) */
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 0 auto; padding: 1rem; }
+  #log p { white-space: pre-wrap; padding: .5rem .8rem; border-radius: .5rem; }
+  .ai { background: #f0f0f0; }
+  .user { background: #dbeafe; margin-left: 3rem; }
+  .error { background: #fee2e2; }
+  form { display: flex; gap: .5rem; margin-top: 1rem; }
+  #msg { flex: 1; padding: .5rem; }
+  label { align-self: center; cursor: pointer; text-decoration: underline; }
+  #cv { display: none; }
+</style>
+</head>
+<body>
+<h1>Postgrad Advisor</h1>
+<div id="log"></div>
+<form id="form">
+  <input id="msg" autocomplete="off" placeholder="Type your answer…" disabled>
+  <button id="send" disabled>Send</button>
+  <label for="cv">upload CV<input id="cv" type="file" accept=".pdf,.txt"></label>
+</form>
+<script>
+const log = document.getElementById("log");
+const form = document.getElementById("form");
+const msg = document.getElementById("msg");
+const sendBtn = document.getElementById("send");
+const cv = document.getElementById("cv");
+let over = false;
+
+function add(role, text) {
+  const p = document.createElement("p");
+  p.className = role;
+  p.textContent = text;
+  log.append(p);
+  p.scrollIntoView();
+  return p;
+}
+
+function setBusy(busy) {
+  msg.disabled = sendBtn.disabled = cv.disabled = busy || over;
+  if (!busy && !over) msg.focus();
+}
+
+// One SSE event block ("event: x" + "data: ..." lines) -> handler call.
+function handleEvent(block, state) {
+  let event = "message", data = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event: ")) event = line.slice(7);
+    else if (line.startsWith("data: ")) data.push(line.slice(6));
+  }
+  const text = data.join("\n");
+  if (event === "token") {
+    if (!state.draft) state.draft = add("ai", "");
+    state.draft.textContent += text;
+    state.draft.scrollIntoView();
+  } else if (event === "message") {
+    if (state.draft) { state.draft.remove(); state.draft = null; }
+    add("ai", text);
+  } else if (event === "error") {
+    add("error", text);
+  } else if (event === "done" && text === "over") {
+    over = true;
+  }
+}
+
+async function send(message) {
+  setBusy(true);
+  if (message) add("user", message);
+  try {
+    const res = await fetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const state = { draft: null };
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const blocks = buf.split("\n\n");
+      buf = blocks.pop();  // last piece may be incomplete
+      blocks.forEach((b) => handleEvent(b, state));
+    }
+  } catch (e) {
+    add("error", "Lost the connection to the server — is it still running?");
+  } finally {
+    setBusy(false);
+  }
+}
+
+form.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const m = msg.value.trim();
+  if (!m || msg.disabled) return;
+  msg.value = "";
+  send(m);
+});
+
+cv.addEventListener("change", async () => {
+  const file = cv.files[0];
+  if (!file) return;
+  cv.value = "";
+  setBusy(true);
+  const res = await fetch("/upload?name=" + encodeURIComponent(file.name), {
+    method: "POST",
+    body: file,
+  });
+  if (!res.ok) {
+    add("error", (await res.json()).detail || "upload failed");
+    setBusy(false);
+    return;
+  }
+  send((await res.json()).path);  // feeds story 005's path intake
+});
+
+send("");  // page load starts the interview (AC 1)
+</script>
+</body>
+</html>
