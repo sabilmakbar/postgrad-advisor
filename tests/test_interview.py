@@ -72,7 +72,10 @@ def test_first_turn_targets_degree_intent_and_pauses(monkeypatch):
 
 def test_interview_fills_state_and_hands_off(monkeypatch):
     # AC 2 + AC 4: progressive fill over 3 turns (vague field answer narrowed by
-    # a follow-up), typed completed state, handoff only once complete.
+    # a follow-up), typed completed state, handoff only once complete. Story
+    # 004's shortlister (the node completion routes to) is stubbed out here;
+    # tests/test_shortlist.py covers it.
+    monkeypatch.setattr(graph_mod, "shortlist_node", lambda s: {"handed_off": True})
     tiers, _ = _wire(
         monkeypatch,
         questions=["Q-intent", "Q-field", "Q-field-narrower", "Q-region"],

@@ -1,5 +1,6 @@
 """LangGraph interview graph (story 003): one interviewer node revisited via a
-conditional edge until the state is complete, then a handoff node.
+conditional edge until the state is complete, then the shortlister node
+(story 004).
 
 Each interviewer visit is one agent turn: receive the user's answer via
 ``interrupt()`` (so the graph pauses between turns), parse it into slots on the
@@ -20,6 +21,7 @@ from app.prompts import (
     POSTDOC_DECLINE,
     TURN_CAP_MESSAGE,
 )
+from app.shortlist import shortlist_node
 from app.state import InterviewState, SlotUpdate
 
 MAX_TURNS = 10  # AC 2: cap enforced here, not in the prompt
@@ -80,14 +82,9 @@ def _interviewer(state: InterviewState) -> dict:
     return {**updates, "messages": messages, "turns": state.turns + 1}
 
 
-def _handoff(state: InterviewState) -> dict:
-    # ponytail: placeholder — story 004's shortlister replaces the body.
-    return {"handed_off": True}
-
-
 def _route(state: InterviewState) -> str:
     if state.is_complete():
-        return "handoff"
+        return "shortlister"
     if state.ended:
         return END
     return "interviewer"  # loop: awaits the next answer at interrupt()
@@ -98,8 +95,8 @@ def build_graph(checkpointer=None):
     to in-memory (the web-chat story may pass its own)."""
     g = StateGraph(InterviewState)
     g.add_node("interviewer", _interviewer)
-    g.add_node("handoff", _handoff)
+    g.add_node("shortlister", shortlist_node)
     g.add_edge(START, "interviewer")
-    g.add_conditional_edges("interviewer", _route, ["interviewer", "handoff", END])
-    g.add_edge("handoff", END)
+    g.add_conditional_edges("interviewer", _route, ["interviewer", "shortlister", END])
+    g.add_edge("shortlister", END)
     return g.compile(checkpointer=checkpointer or InMemorySaver())
