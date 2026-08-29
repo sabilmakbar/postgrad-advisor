@@ -51,6 +51,43 @@ exactly as written in that line.
   region, fierce competition, an unranked entry — name the caveat plainly in
   that line. At least one line should carry such a caveat."""
 
+CV_REQUEST = (
+    "To judge your fit for these programs I need your CV. Please give the path "
+    "to your CV file (.pdf or .txt) — it is parsed locally on this machine."
+)
+
+CV_UNREADABLE = (
+    "I couldn't read that file — I need a path to a readable .pdf or .txt CV. "
+    "Please try again."
+)
+
+CV_EXTRACT_INSTRUCTIONS = """\
+Extract key facts from the CV text below. Fill only the fields the CV clearly
+states; leave everything else unset. Copy values faithfully — never infer a
+GPA, test score, or degree the CV does not state."""
+
+CV_CONFIRM_INSTRUCTIONS = """\
+The user was shown facts extracted from their CV and asked to confirm them.
+Decide from their reply: set confirmed to true only if they confirm the facts
+are correct as shown. If they correct or add anything, set confirmed to false
+and put ONLY the corrected fields into corrections."""
+
+FIT_INSTRUCTIONS = """\
+You are judging how well the candidate's confirmed CV facts meet ONE program's
+admission requirements, using only the fetched requirements text provided.
+
+- label: strong (clearly meets the stated requirements), borderline (close or
+  mixed), reach (clearly below, or missing key requirements). Use unknown ONLY
+  if the fetched text contains no actual admission requirements.
+- Every reason must tie a specific CV fact to a specific fetched requirement
+  (e.g. "GPA 3.7/4.0 meets the stated 3.5 minimum"). No generic encouragement.
+- sources: copy the URLs, exactly as given in the source list, that support
+  your reasons.
+- NEVER state a numeric admission probability, percentage, or odds. Qualitative
+  labels and reasons only.
+- Stay realistic per your persona: name gaps plainly, and for a reach verdict
+  say what would realistically close the gap."""
+
 TURN_CAP_MESSAGE = (
     "We've reached this interview's question limit and, realistically, I still "
     "don't know enough to recommend well — I need your degree intent, field, "

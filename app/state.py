@@ -5,6 +5,41 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 DegreeIntent = Literal["masters_coursework", "masters_research", "phd"]
+FitLabel = Literal["strong", "borderline", "reach", "unknown"]  # AD-4: labels only
+
+
+class CVFacts(BaseModel):
+    """Key facts extracted from the CV (story 005, AC 1). Doubles as the
+    light-tier structured-output schema, like SlotUpdate. Fields left unset
+    mean the CV didn't state them — never guessed."""
+
+    degree: str | None = Field(
+        None,
+        description="Highest completed or in-progress degree with field and "
+        "institution, e.g. 'BSc Computer Science, University of X'.",
+    )
+    gpa: str | None = Field(
+        None,
+        description="GPA WITH its scale, exactly as the CV states it, "
+        "e.g. '3.7 / 4.0'. Unset if the CV gives none.",
+    )
+    publications: list[str] = Field(
+        [], description="One entry per publication: title and venue/year."
+    )
+    english_test: str | None = Field(
+        None, description="English test and score, e.g. 'IELTS 7.5'. Unset if none."
+    )
+
+
+class ProgramFit(BaseModel):
+    """Grounded fit verdict for one shortlisted program (story 005). Sources
+    are code-enforced to come from the fetched search results, never from
+    free LLM text (AC 3); `unknown` carries the searched query (AC 4)."""
+
+    university: str
+    label: FitLabel
+    reasons: list[str]
+    sources: list[str]  # >=1 URL for non-unknown verdicts; empty for unknown
 
 
 class ShortlistEntry(BaseModel):
@@ -32,6 +67,10 @@ class InterviewState(BaseModel):
     ended: bool = False  # turn cap hit before the state completed
     handed_off: bool = False  # set by the shortlister node (story 004)
     shortlist: list[ShortlistEntry] = []  # built by the shortlister node
+    cv_facts: CVFacts | None = None  # story 005: set by cv_intake, user-confirmed
+    cv_confirmed: bool = False  # story 005: set once the user confirms the echo
+    searches_used: int = 0  # story 005: runtime-search budget counter (AD-3, <=12)
+    fit_verdicts: list[ProgramFit] = []  # story 005: built by the fit node
 
     def is_complete(self) -> bool:
         return bool(self.degree_intent and self.field and self.target_regions)
