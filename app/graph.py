@@ -1,6 +1,6 @@
 """LangGraph interview graph (story 003): one interviewer node revisited via a
 conditional edge until the state is complete, then the shortlister node
-(story 004).
+(story 004), then CV intake -> confirm -> per-program fit summary (story 005).
 
 Each interviewer visit is one agent turn: receive the user's answer via
 ``interrupt()`` (so the graph pauses between turns), parse it into slots on the
@@ -13,6 +13,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
+from app.cv import cv_confirm_node, cv_intake_node
+from app.fit import fit_node
 from app.model_layer import chat, structured
 from app.prompts import (
     INTERVIEWER_INSTRUCTIONS,
@@ -96,7 +98,22 @@ def build_graph(checkpointer=None):
     g = StateGraph(InterviewState)
     g.add_node("interviewer", _interviewer)
     g.add_node("shortlister", shortlist_node)
+    g.add_node("cv_intake", cv_intake_node)
+    g.add_node("cv_confirm", cv_confirm_node)
+    g.add_node("fit", fit_node)
     g.add_edge(START, "interviewer")
     g.add_conditional_edges("interviewer", _route, ["interviewer", "shortlister", END])
-    g.add_edge("shortlister", END)
+    g.add_edge("shortlister", "cv_intake")
+    # story 005: loop until a CV parses, then until the user confirms the facts
+    g.add_conditional_edges(
+        "cv_intake",
+        lambda s: "cv_confirm" if s.cv_facts else "cv_intake",
+        ["cv_intake", "cv_confirm"],
+    )
+    g.add_conditional_edges(
+        "cv_confirm",
+        lambda s: "fit" if s.cv_confirmed else "cv_confirm",
+        ["cv_confirm", "fit"],
+    )
+    g.add_edge("fit", END)
     return g.compile(checkpointer=checkpointer or InMemorySaver())

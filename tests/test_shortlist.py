@@ -20,6 +20,7 @@ import app.model_layer as model_layer
 import app.shortlist as shortlist_mod
 from app.dataset import ProgramDataset, University, load_dataset
 from app.graph import build_graph
+from app.prompts import CV_REQUEST
 from app.shortlist import MAX_SIZE, MIN_SIZE, Pick, Picks, prefilter, shortlist_node
 from app.state import InterviewState, SlotUpdate
 
@@ -328,8 +329,9 @@ def test_graph_wiring_interview_complete_to_shortlist(monkeypatch):
     state = g.invoke(Command(resume="a phd in CS, in Asia"), cfg)
 
     assert state["handed_off"] is True
-    assert "__interrupt__" not in state
+    # story 005: after the shortlist the run pauses at CV intake
+    assert state["__interrupt__"][0].value == CV_REQUEST
     shortlist = state["shortlist"]
     assert MIN_SIZE <= len(shortlist) <= MAX_SIZE
     assert {e.university for e in shortlist} <= DATASET_NAMES
-    assert state["messages"][-1][0] == "ai"  # rendered shortlist closes the chat
+    assert state["messages"][-1][0] == "ai"  # rendered shortlist is the last message

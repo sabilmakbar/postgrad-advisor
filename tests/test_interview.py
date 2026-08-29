@@ -14,7 +14,7 @@ from langgraph.types import Command
 import app.graph as graph_mod
 import app.model_layer as model_layer
 from app.graph import build_graph
-from app.prompts import POSTDOC_DECLINE, TURN_CAP_MESSAGE
+from app.prompts import CV_REQUEST, POSTDOC_DECLINE, TURN_CAP_MESSAGE
 from app.state import InterviewState, SlotUpdate
 
 
@@ -93,7 +93,8 @@ def test_interview_fills_state_and_hands_off(monkeypatch):
         state = g.invoke(Command(resume=answer), _thread())
 
     assert state["handed_off"] is True
-    assert "__interrupt__" not in state  # run finished
+    # story 005: after handoff the run pauses at CV intake instead of ending
+    assert state["__interrupt__"][0].value == CV_REQUEST
     typed = InterviewState(**{k: v for k, v in state.items() if k in InterviewState.model_fields})
     assert typed.is_complete()
     assert typed.degree_intent == "phd"
