@@ -2,28 +2,201 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Postgrad Advisor</title>
+<!-- theme before paint, so a dark page never flashes white (site Base.astro pattern) -->
+<script>
+  (function () {
+    const t = localStorage.getItem("theme");
+    const dark = t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.classList.toggle("dark", dark);
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  /* readable, nothing more (story 006 out-of-scope: styling) */
-  body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 0 auto; padding: 1rem; }
-  #log p { white-space: pre-wrap; padding: .5rem .8rem; border-radius: .5rem; }
-  .ai { background: #f0f0f0; }
-  .user { background: #dbeafe; margin-left: 3rem; }
-  .error { background: #fee2e2; }
-  form { display: flex; gap: .5rem; margin-top: 1rem; }
-  #msg { flex: 1; padding: .5rem; }
-  label { align-self: center; cursor: pointer; text-decoration: underline; }
+  /* Design tokens ported from the personal site (src/styles/global.css) —
+     values only: that site is Tailwind, this page is one plain file (AD-1). */
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --fg: #18181b;
+    --muted: #57534e;
+    --border: #e7e5e4;
+    --accent: #0d9488;
+    --accent-fg: #ffffff;
+    --danger: #b91c1c;
+  }
+  .dark {
+    --bg: #0b0c0e;
+    --surface: #141619;
+    --fg: #e8e8ea;
+    --muted: #a1a1aa;
+    --border: #26272b;
+    --accent: #2dd4bf;
+    --accent-fg: #0b0c0e;
+    --danger: #fca5a5;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto;
+    max-width: 46rem;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    padding: 0 1rem;
+    background: var(--bg);
+    color: var(--fg);
+    font: 400 16px/1.55 "Inter", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent); color: var(--accent-fg); }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .9rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  h1 { margin: 0; font-size: 1.05rem; font-weight: 600; letter-spacing: -0.02em; }
+  header p { margin: .15rem 0 0; font-size: .78rem; color: var(--muted); }
+  #theme {
+    flex: none;
+    width: 2.25rem; height: 2.25rem;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: .6rem;
+    background: var(--surface); color: var(--muted);
+    cursor: pointer; transition: color .15s, border-color .15s;
+  }
+  #theme:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* message list ------------------------------------------------------- */
+  #log {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+  }
+  .row { display: flex; }
+  .row.user { justify-content: flex-end; }
+  .row.error { flex-direction: column; align-items: flex-start; gap: .4rem; }
+  .bubble {
+    max-width: 90%;
+    padding: .5rem .75rem;          /* px-3 py-2 */
+    border-radius: .75rem;          /* rounded-xl */
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  /* the site widget puts bg-bg bubbles on a bg-surface panel; this page's body
+     is --bg, so agent bubbles take --surface: same pair, inverted. */
+  .ai .bubble { background: var(--surface); border: 1px solid var(--border); }
+  .user .bubble { background: var(--accent); color: var(--accent-fg); }
+  .error .bubble {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--danger);
+    color: var(--muted);
+    font-size: .95rem;
+  }
+  .retry {
+    padding: .3rem .7rem;
+    border: 1px solid var(--border); border-radius: .6rem;
+    background: transparent; color: var(--accent);
+    font: inherit; font-size: .85rem; cursor: pointer;
+    transition: border-color .15s;
+  }
+  .retry:hover { border-color: var(--accent); }
+
+  /* pending-turn placeholder: dots + a rotating line (global.css:60-81) --- */
+  .ph { display: inline-flex; align-items: center; gap: .5rem; color: var(--muted); }
+  .typing { display: inline-flex; align-items: center; gap: .28rem; height: 1.25rem; }
+  .typing i {
+    width: .4rem; height: .4rem; border-radius: 9999px;
+    background: var(--accent);
+    animation: typing-bounce 1.2s ease-in-out infinite;
+  }
+  .typing i:nth-child(2) { animation-delay: .15s; }
+  .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes typing-bounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: .35; }
+    40% { transform: translateY(-4px); opacity: 1; }
+  }
+
+  /* composer ------------------------------------------------------------ */
+  form {
+    display: flex;
+    align-items: flex-end;
+    gap: .5rem;
+    padding: .5rem;
+    margin-bottom: calc(.75rem + env(safe-area-inset-bottom));
+    border: 1px solid var(--border);
+    border-radius: .9rem;
+    background: var(--surface);
+  }
+  #msg {
+    flex: 1;
+    min-width: 0;
+    max-height: 8rem;
+    resize: none;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    padding: .4rem .3rem;
+  }
+  #msg::placeholder { color: var(--muted); }
+  #send {
+    flex: none;
+    padding: .5rem 1rem;
+    border: 0; border-radius: .6rem;
+    background: var(--accent); color: var(--accent-fg);
+    font: inherit; font-weight: 500; cursor: pointer;
+  }
+  #send:disabled, #msg:disabled { opacity: .5; cursor: default; }
+  label {
+    flex: none;
+    padding: .5rem .7rem;
+    border: 1px solid var(--border); border-radius: .6rem;
+    color: var(--muted); font-size: .85rem; cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  label:hover { color: var(--accent); border-color: var(--accent); }
   #cv { display: none; }
+
+  @media (max-width: 640px) {
+    body { padding: 0 .75rem; }
+    .bubble { max-width: 95%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .typing i { animation: none; opacity: .6; }
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
 </style>
 </head>
 <body>
-<h1>Postgrad Advisor</h1>
-<div id="log"></div>
-<form id="form">
-  <input id="msg" autocomplete="off" placeholder="Type your answer…" disabled>
+<header>
+  <div>
+    <h1>Postgrad Advisor</h1>
+    <p>Interview → shortlist → CV fit</p>
+  </div>
+  <button id="theme" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  </button>
+</header>
+<div id="log" aria-live="polite"></div>
+<form id="form" autocomplete="off">
+  <textarea id="msg" rows="1" placeholder="Type your answer…" disabled></textarea>
+  <label for="cv">CV<input id="cv" type="file" accept=".pdf,.txt"></label>
   <button id="send" disabled>Send</button>
-  <label for="cv">upload CV<input id="cv" type="file" accept=".pdf,.txt"></label>
 </form>
 <script>
 const log = document.getElementById("log");
@@ -33,18 +206,63 @@ const sendBtn = document.getElementById("send");
 const cv = document.getElementById("cv");
 let over = false;
 
+const atBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+const toBottom = () => { log.scrollTop = log.scrollHeight; };
+
+// Only follow new content when the reader is already at the bottom (AC 4).
 function add(role, text) {
-  const p = document.createElement("p");
-  p.className = role;
-  p.textContent = text;
-  log.append(p);
-  p.scrollIntoView();
-  return p;
+  const row = document.createElement("div");
+  row.className = "row " + role;
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.textContent = text;
+  row.append(bubble);
+  const stick = atBottom();
+  log.append(row);
+  if (stick) toBottom();
+  return bubble;
+}
+
+function addError(text, retryWith) {
+  const bubble = add("error", text);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "retry";
+  btn.textContent = "Try again";
+  btn.addEventListener("click", () => {
+    btn.closest(".row").remove();
+    send(retryWith);
+  });
+  bubble.parentElement.append(btn);
+}
+
+// Rotating canned lines while the turn is pending. Story 010 replaces these
+// with real graph statuses: keep the .ph-line slot, drop the rotation, write
+// the status string into it — the discard path below stays unchanged.
+const PLACEHOLDERS = [
+  "thinking…",
+  "formulating the answer…",
+  "working through it…",
+  "putting the pieces together…",
+];
+
+// The pending bubble never renders empty (AC 2): dots + a line from the start.
+function openPlaceholder(bubble) {
+  const ph = document.createElement("span");
+  ph.className = "ph";
+  ph.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="ph-line"></span>';
+  const line = ph.querySelector(".ph-line");
+  let i = Math.floor(Math.random() * PLACEHOLDERS.length);
+  line.textContent = PLACEHOLDERS[i];
+  const rot = setInterval(() => { line.textContent = PLACEHOLDERS[++i % PLACEHOLDERS.length]; }, 2600);
+  bubble.append(ph);
+  return () => { clearInterval(rot); ph.remove(); };  // first token, or discard on error
 }
 
 function setBusy(busy) {
   msg.disabled = sendBtn.disabled = cv.disabled = busy || over;
-  if (!busy && !over) msg.focus();
+  // autofocus on a phone summons the keyboard over the conversation (AC 7)
+  if (!busy && !over && matchMedia("(min-width: 640px)").matches) msg.focus();
 }
 
 // One SSE event block ("event: x" + "data: ..." lines) -> per-turn state.
@@ -57,6 +275,9 @@ function handleEvent(block, state) {
   const text = data.join("\n");
   if (event === "token") state.queue += text;
   else if (event === "message") state.finals.push(["ai", text]);
+  // Story 010 seam: the error event carries one flat string today. When it
+  // gains a `kind`, branch here for offline-vs-quota copy — no kinds are
+  // invented client-side until the contract carries them.
   else if (event === "error") state.finals.push(["error", text]);
   else if (event === "done" && text === "over") over = true;
 }
@@ -69,10 +290,12 @@ function handleEvent(block, state) {
 function startPainter(state) {
   return setInterval(() => {
     if (state.queue) {
+      if (state.dropPh) { state.dropPh(); state.dropPh = null; }  // first real token wins
       const n = Math.max(2, Math.ceil(state.queue.length / 40));  // catch up on long backlogs
-      state.draft.textContent += state.queue.slice(0, n);
+      const stick = atBottom();
+      state.body.textContent += state.queue.slice(0, n);
       state.queue = state.queue.slice(n);
-      state.draft.scrollIntoView();
+      if (stick) toBottom();
     } else if (state.closed) {
       finish(state);
     }
@@ -81,18 +304,39 @@ function startPainter(state) {
 
 function finish(state) {
   clearInterval(state.painter);
+  if (state.dropPh) { state.dropPh(); state.dropPh = null; }
   // Replace the painted draft with the authoritative messages; keep it when
   // nothing replaces it (mid-stream error: painted prose + error line stay).
-  if (state.finals.some(([role]) => role === "ai") || !state.draft.textContent)
+  // Placeholder text never counts here, so an error before the first token
+  // discards the whole draft bubble (AC 2).
+  if (state.finals.some(([role]) => role === "ai") || !state.body.textContent)
     state.draft.remove();
-  for (const [role, text] of state.finals) add(role, text);
+  for (const [role, text] of state.finals) {
+    if (role === "error") addError(text, state.sent);
+    else add(role, text);
+  }
   setBusy(false);
 }
+
+// The client-side connection failure is the one cause this page owns; varied
+// phrasings so a repeated failure doesn't read as canned (site qa.ts pattern).
+const OFFLINE = [
+  "I could not reach the server just now. Is it still running?",
+  "That did not go through — the server seems unreachable. Try again in a moment.",
+  "Lost the connection to the server. Mind trying that again?",
+  "Something got in the way of reaching the server. Give it another go.",
+];
 
 async function send(message) {
   setBusy(true);
   if (message) add("user", message);
-  const state = { draft: add("ai", ""), queue: "", finals: [], closed: false };
+  const draft = add("ai", "");
+  const state = {
+    draft: draft.parentElement, body: document.createElement("span"),
+    dropPh: openPlaceholder(draft), queue: "", finals: [], closed: false,
+    sent: message,  // this turn's user text, for a retry button on its error
+  };
+  draft.append(state.body);
   state.painter = startPainter(state);
   try {
     const res = await fetch("/chat", {
@@ -113,16 +357,34 @@ async function send(message) {
     }
   } catch (e) {
     state.queue = "";  // connection lost: show the error now, not after a drain
-    state.finals.push(["error", "Lost the connection to the server — is it still running?"]);
+    state.finals.push(["error", OFFLINE[Math.floor(Math.random() * OFFLINE.length)]]);
   }
   state.closed = true;  // painter drains the queue, then finish() runs
 }
+
+document.getElementById("theme").addEventListener("click", () => {
+  const dark = document.documentElement.classList.toggle("dark");
+  localStorage.setItem("theme", dark ? "dark" : "light");
+});
+
+function grow() {
+  msg.style.height = "auto";
+  msg.style.height = msg.scrollHeight + "px";
+}
+msg.addEventListener("input", grow);
+msg.addEventListener("keydown", (e) => {  // Enter sends, Shift+Enter newlines (AC 6)
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    form.requestSubmit();
+  }
+});
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const m = msg.value.trim();
   if (!m || msg.disabled) return;
   msg.value = "";
+  grow();
   send(m);
 });
 
@@ -136,7 +398,7 @@ cv.addEventListener("change", async () => {
     body: file,
   });
   if (!res.ok) {
-    add("error", (await res.json()).detail || "upload failed");
+    add("error", (await res.json()).detail || "upload failed");  // retry = pick another file
     setBusy(false);
     return;
   }
