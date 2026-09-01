@@ -469,7 +469,40 @@ cv.addEventListener("change", async () => {
   setBusy(false);
 });
 
-send("");  // page load starts the interview (AC 1)
+// Fixed greeting — page-side copy, never LLM output, so it costs no quota and
+// cannot leak model text. It is typed through the SAME painter the real turns
+// use (no second typing loop) so the landing reads like the agent speaking
+// rather than UI chrome, then the first interview turn starts.
+const INTRO =
+  "I help you find postgraduate programmes — taught master's, research master's, or PhD — " +
+  "and judge honestly how you'd fit them.\n\n" +
+  "A few questions first, then a shortlist of real universities, then your CV against each one. " +
+  "You can attach your CV at any point with the CV button; it is read on this machine.";
+
+function typeIntro() {
+  return new Promise((resolve) => {
+    setBusy(true);
+    const draft = add("ai", "");
+    const state = {
+      draft: draft.parentElement, body: document.createElement("span"),
+      dropPh: null,  // no placeholder: nothing is being waited on, text is ready
+      queue: INTRO, finals: [], closed: false, sent: ["", undefined],
+    };
+    draft.append(state.body);
+    // closed stays false on purpose: the shared finish() would call setBusy(false)
+    // a tick after the drain, re-enabling input during the interview turn that
+    // follows. The intro owns its own teardown instead — drain, stop, resolve.
+    state.painter = startPainter(state);
+    const watch = setInterval(() => {
+      if (state.queue) return;
+      clearInterval(watch);
+      clearInterval(state.painter);
+      resolve();
+    }, 25);
+  });
+}
+
+typeIntro().then(() => send(""));  // greeting, then the interview starts (AC 1)
 </script>
 </body>
 </html>
