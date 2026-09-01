@@ -13,10 +13,12 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from app.cv import cv_confirm_node, cv_intake_node
+from app.cv import cv_ask_node, cv_confirm_node, cv_intake_node, split_upload
 from app.fit import fit_node
 from app.model_layer import chat, structured
 from app.prompts import (
+    CV_AFTER_CAP,
+    CV_RECEIVED,
     INTERVIEWER_INSTRUCTIONS,
     PARSER_INSTRUCTIONS,
     PERSONA,
@@ -44,14 +46,33 @@ def _interviewer(state: InterviewState) -> dict:
     messages = list(state.messages)
     updates: dict = {}
     decline = ""
+    upload = None
 
     if state.turns > 0:  # a question is pending: receive and parse the answer
         answer = interrupt(messages[-1][1])
+        # Story 009 AC 2: a CV arriving mid-interview is handled in code. The
+        # path never reaches the LLM — it answers no slot, and improvising about
+        # a file it cannot open was the live incident.
+        upload, answer = split_upload(answer)
+        if upload:
+            updates["pending_cv"] = upload
+        if upload and not answer:
+            # The attachment came alone, so it answers nothing: acknowledge it
+            # and leave the pending question standing. It is still in the log
+            # right above, so restating it only made the user read it twice
+            # (fix round 2). Two uploads in a row get one acknowledgement each,
+            # never a stacked one.
+            if messages[-1] != ("ai", CV_RECEIVED):
+                messages.append(("ai", CV_RECEIVED))
+            return {"pending_cv": upload, "messages": messages}
+        # The question being answered is not always messages[-2]: an
+        # acknowledgement can sit between it and this answer (fix round 2).
+        question = next(t for r, t in reversed(messages) if r == "ai" and t != CV_RECEIVED)
         messages.append(("human", answer))
         parsed = structured(SlotUpdate, tier="light").invoke(
             [
                 ("system", PARSER_INSTRUCTIONS),
-                ("human", f"Question asked: {messages[-2][1]}\nAnswer: {answer}"),
+                ("human", f"Question asked: {question}\nAnswer: {answer}"),
             ]
         )
         for name in ("degree_intent", "field", "focus_area"):
@@ -65,9 +86,19 @@ def _interviewer(state: InterviewState) -> dict:
             decline = POSTDOC_DECLINE + "\n\n"
 
     merged = state.model_copy(update=updates)
+    capped = not merged.is_complete() and state.turns >= MAX_TURNS
+    # one Send, two parts: the typed answer counted above, the CV is held and
+    # acknowledged here, before the normal next question (fix round). The cap
+    # ends the run at END, so nothing ever consumes a held CV — whether it
+    # arrived on this turn or an earlier one, say so rather than promise a read
+    # that will never happen (fix round 2).
+    if capped and merged.pending_cv:
+        messages.append(("ai", CV_AFTER_CAP))
+    elif upload:
+        messages.append(("ai", CV_RECEIVED))
     if merged.is_complete():
         return {**updates, "messages": messages}
-    if state.turns >= MAX_TURNS:
+    if capped:
         messages.append(("ai", TURN_CAP_MESSAGE))
         return {**updates, "messages": messages, "ended": True}
 
@@ -100,22 +131,26 @@ def build_graph(checkpointer=None):
     g = StateGraph(InterviewState)
     g.add_node("interviewer", _interviewer)
     g.add_node("shortlister", shortlist_node)
+    g.add_node("cv_ask", cv_ask_node)
     g.add_node("cv_intake", cv_intake_node)
     g.add_node("cv_confirm", cv_confirm_node)
     g.add_node("fit", fit_node)
     g.add_edge(START, "interviewer")
     g.add_conditional_edges("interviewer", _route, ["interviewer", "shortlister", END])
-    g.add_edge("shortlister", "cv_intake")
+    # story 009 AC 4: the ask is its own superstep, so it is checkpointed before
+    # cv_intake's interrupt fires and the server's replay never re-emits it late
+    g.add_edge("shortlister", "cv_ask")
+    g.add_edge("cv_ask", "cv_intake")
     # story 005: loop until a CV parses, then until the user confirms the facts
     g.add_conditional_edges(
         "cv_intake",
         lambda s: "cv_confirm" if s.cv_facts else "cv_intake",
         ["cv_intake", "cv_confirm"],
     )
-    g.add_conditional_edges(
+    g.add_conditional_edges(  # story 009 AC 5: a new CV re-enters intake
         "cv_confirm",
-        lambda s: "fit" if s.cv_confirmed else "cv_confirm",
-        ["cv_confirm", "fit"],
+        lambda s: "cv_intake" if s.pending_cv else "fit" if s.cv_confirmed else "cv_confirm",
+        ["cv_intake", "cv_confirm", "fit"],
     )
     g.add_edge("fit", END)
     return g.compile(checkpointer=checkpointer or InMemorySaver())

@@ -56,6 +56,18 @@ CV_REQUEST = (
     "to your CV file (.pdf or .txt) — it is parsed locally on this machine."
 )
 
+# Story 009 AC 2: the fixed reply when a CV lands mid-interview. Code emits it;
+# the interviewer LLM is never asked to improvise about files it cannot open.
+CV_RECEIVED = "Got your CV — I'll read it right after we finish the interview."
+
+# Story 009 fix round 2: CV_RECEIVED promises a read that the turn cap makes
+# impossible — the capped run routes to END, so nothing consumes the held CV.
+CV_AFTER_CAP = (
+    "I have the CV you just sent, but this interview ended without enough "
+    "detail to shortlist anything, so I won't be able to judge it here. Please "
+    "start a fresh chat and send it again there."
+)
+
 CV_UNREADABLE = (
     "I couldn't read that file — I need a path to a readable .pdf or .txt CV. "
     "Please try again."

@@ -15,6 +15,7 @@ from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
+from app.config import CV_DIR
 from app.model_layer import structured
 from app.prompts import (
     CV_CONFIRM_INSTRUCTIONS,
@@ -23,6 +24,38 @@ from app.prompts import (
     CV_UNREADABLE,
 )
 from app.state import CVFacts, InterviewState
+
+
+def split_upload(message: str) -> tuple[str | None, str]:
+    """Split a message into (uploaded-CV path, the rest of what the user typed).
+
+    /upload returns ABSOLUTE paths under CV_DIR, so only those count: a path the
+    user types by hand stays a normal answer, and ``is_relative_to`` (not a
+    string prefix) keeps ``data/cvfoo/x.pdf`` from matching. Lines are checked
+    one by one because the composer sends the chip's path on its own line,
+    alongside whatever the user typed with it — and that remainder is a real
+    message that every stage must still answer (story 009 fix round), so it
+    comes back rather than being dropped with the path.
+
+    Trust boundary (fix round 2): an absolute line is resolved before the
+    containment check, so ``<CV_DIR>/../../etc/passwd`` no longer counts as an
+    upload, and CV_DIR itself is not a CV. A relative line stays relative and so
+    never matches — only /upload's absolute paths are intercepted. At most ONE
+    attachment exists per Send, so any FURTHER upload-shaped line is dropped
+    rather than kept: a path must never reach the slot parser or the log (AC 2).
+    """
+    root = CV_DIR.resolve()
+    path = None
+    kept = []
+    for line in message.splitlines():
+        candidate = Path(line.strip())
+        if candidate.is_absolute():
+            candidate = candidate.resolve()
+        if candidate != root and candidate.is_relative_to(root):
+            path = path or str(candidate)
+        else:
+            kept.append(line)
+    return path, "\n".join(kept).strip()
 
 
 def parse_cv(path: str) -> str:
@@ -68,26 +101,67 @@ class CVConfirmation(BaseModel):
     )
 
 
+def review_facts(facts: CVFacts, reply: str) -> tuple[bool, CVFacts]:
+    """Light-tier read of a reply to the facts echo: did the user confirm, and
+    the facts with any corrections merged in. Shared by cv_confirm_node and by
+    cv_intake_node, which applies corrections typed alongside a new CV."""
+    parsed = structured(CVConfirmation, tier="light").invoke(
+        [
+            ("system", CV_CONFIRM_INSTRUCTIONS),
+            ("human", f"Facts shown:\n{render_facts(facts)}\n\nUser reply: {reply}"),
+        ]
+    )
+    if parsed.corrections:
+        updates = {k: v for k, v in parsed.corrections.model_dump().items() if v}
+        facts = facts.model_copy(update=updates)
+    return parsed.confirmed, facts
+
+
+def cv_ask_node(state: InterviewState) -> dict:
+    """Write the CV ask to state — and nothing else (story 009, AC 4).
+
+    The ask used to be appended inside cv_intake_node, next to its
+    ``interrupt()``. State writes only commit when a node RETURNS, so on the
+    first run the interrupt escaped before the append ever happened, and the
+    append landed on the resume re-run — after the server had captured its
+    replay snapshot. The ask therefore re-emitted one turn late as a dead turn.
+    Swapping the two lines cannot fix that; only a PRIOR superstep can, which is
+    this node. A pending upload needs no ask at all (AC 3).
+
+    The re-ask after an unreadable path is NOT written here: cv_intake_node
+    returns it itself, so it is already committed for the same reason.
+    """
+    if state.pending_cv:
+        return {}
+    return {"messages": state.messages + [("ai", CV_REQUEST)]}
+
+
 def cv_intake_node(state: InterviewState) -> dict:
-    """Ask for the CV path, parse locally, extract facts, echo them. A path
-    that can't be parsed (or yields no text) re-asks instead of failing —
-    the route loops back here while cv_facts is unset."""
-    messages = list(state.messages)
-    retry = bool(messages) and messages[-1] == ("ai", CV_UNREADABLE)
-    path = interrupt(CV_UNREADABLE if retry else CV_REQUEST)
-    if not retry:
-        messages.append(("ai", CV_REQUEST))
-    messages.append(("human", path))
+    """Parse the CV locally, extract facts, echo them. The path comes from a
+    held upload (AC 3, AC 5) or from the answer to cv_ask's question. A path
+    that can't be parsed (or yields no text) re-asks here and clears cv_facts,
+    so the route loops straight back instead of failing.
+
+    Text sent WITH the CV (held from an earlier stage or typed here) is a
+    correction and is applied to the fresh extraction (story 009 fix round)."""
+    path, extra = state.pending_cv, state.pending_correction
+    if not path:
+        path, extra = split_upload(interrupt(state.messages[-1][1]))
+        if not path:  # the ask also accepts a path the user types by hand
+            path, extra = extra, None
+    messages = state.messages + [("human", path)]
     try:
         text = parse_cv(path)
     except Exception:  # trust boundary: any unreadable user path -> re-ask
         text = ""
     if not text.strip():
         messages.append(("ai", CV_UNREADABLE))
-        return {"messages": messages}
+        return {"cv_facts": None, "pending_cv": None, "pending_correction": None, "messages": messages}
     facts = extract_facts(text)
+    if extra:  # corrections belong to the NEW facts, so they are applied here
+        _, facts = review_facts(facts, extra)
     messages.append(("ai", render_facts(facts)))
-    return {"cv_facts": facts, "messages": messages}
+    return {"cv_facts": facts, "pending_cv": None, "pending_correction": None, "messages": messages}
 
 
 def cv_confirm_node(state: InterviewState) -> dict:
@@ -95,18 +169,14 @@ def cv_confirm_node(state: InterviewState) -> dict:
     A correcting reply merges the corrected fields and re-echoes (the route
     loops back here until cv_confirmed)."""
     answer = interrupt(state.messages[-1][1])  # the rendered facts echo
+    path, answer = split_upload(answer)
+    if path:  # story 009 AC 5: another CV here means "use this one instead"
+        # Corrections typed with it apply to the REPLACEMENT extraction, not to
+        # the facts being thrown away, so they travel with the path to intake.
+        return {"pending_cv": path, "pending_correction": answer or None}
     messages = state.messages + [("human", answer)]
-    parsed = structured(CVConfirmation, tier="light").invoke(
-        [
-            ("system", CV_CONFIRM_INSTRUCTIONS),
-            ("human", f"Facts shown:\n{render_facts(state.cv_facts)}\n\nUser reply: {answer}"),
-        ]
-    )
-    if parsed.confirmed:
+    confirmed, facts = review_facts(state.cv_facts, answer)
+    if confirmed:
         return {"cv_confirmed": True, "messages": messages}
-    facts = state.cv_facts
-    if parsed.corrections:
-        updates = {k: v for k, v in parsed.corrections.model_dump().items() if v}
-        facts = facts.model_copy(update=updates)
     messages.append(("ai", render_facts(facts)))
     return {"cv_facts": facts, "messages": messages}

@@ -2,8 +2,8 @@
 
 One page, one local user (AD-1): ``GET /`` serves the static chat page,
 ``POST /chat`` runs one graph turn and streams it as SSE, ``POST /upload``
-saves a CV under data/cv/ (gitignored) and returns the path the page then
-feeds into story 005's intake as a normal chat message.
+saves a CV under data/cv/ (gitignored) and returns the path the page holds as
+an attachment chip until the user's next Send (story 009).
 
 Run: ``uv run uvicorn app.server:app``.
 """
@@ -18,13 +18,11 @@ from fastapi.responses import FileResponse, StreamingResponse
 from langchain_core.messages import AIMessageChunk
 from langgraph.types import Command
 
+from app.config import CV_DIR, ROOT
 from app.graph import build_graph
 from app.model_layer import AllProvidersExhausted
 
 logger = logging.getLogger(__name__)
-
-ROOT = Path(__file__).resolve().parent.parent
-CV_DIR = ROOT / "data" / "cv"
 
 # FR-008 acceptance wording: plain language, never a stack trace (AC 4).
 QUOTA_MESSAGE = (

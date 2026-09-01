@@ -67,6 +67,8 @@ class InterviewState(BaseModel):
     ended: bool = False  # turn cap hit before the state completed
     handed_off: bool = False  # set by the shortlister node (story 004)
     shortlist: list[ShortlistEntry] = []  # built by the shortlister node
+    pending_cv: str | None = None  # story 009: uploaded path held until cv_intake
+    pending_correction: str | None = None  # story 009: text sent with that upload
     cv_facts: CVFacts | None = None  # story 005: set by cv_intake, user-confirmed
     cv_confirmed: bool = False  # story 005: set once the user confirms the echo
     searches_used: int = 0  # story 005: runtime-search budget counter (AD-3, <=12)

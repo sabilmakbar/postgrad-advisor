@@ -133,14 +133,34 @@
   /* composer ------------------------------------------------------------ */
   form {
     display: flex;
-    align-items: flex-end;
-    gap: .5rem;
+    flex-direction: column;   /* attachment chip row above the input row */
+    gap: .4rem;
     padding: .5rem;
     margin-bottom: calc(.75rem + env(safe-area-inset-bottom));
     border: 1px solid var(--border);
     border-radius: .9rem;
     background: var(--surface);
   }
+  .composer { display: flex; align-items: flex-end; gap: .5rem; }
+  /* attachment chip: the file is held here until the user presses Send (AC 1) */
+  #chip {
+    align-self: flex-start;
+    display: flex; align-items: center; gap: .4rem;
+    max-width: 100%;
+    padding: .25rem .3rem .25rem .55rem;
+    border: 1px solid var(--border); border-radius: .6rem;
+    background: var(--bg); color: var(--muted); font-size: .82rem;
+  }
+  #chip[hidden] { display: none; }
+  #chipname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #chipx {
+    flex: none;
+    width: 1.35rem; height: 1.35rem; line-height: 1;
+    border: 0; border-radius: .4rem;
+    background: transparent; color: var(--muted);
+    font: inherit; font-size: 1rem; cursor: pointer;
+  }
+  #chipx:hover { color: var(--danger); }
   #msg {
     flex: 1;
     min-width: 0;
@@ -194,9 +214,15 @@
 </header>
 <div id="log" aria-live="polite"></div>
 <form id="form" autocomplete="off">
-  <textarea id="msg" rows="1" placeholder="Type your answer…" disabled></textarea>
-  <label for="cv">CV<input id="cv" type="file" accept=".pdf,.txt"></label>
-  <button id="send" disabled>Send</button>
+  <div id="chip" hidden>
+    <span id="chipname"></span>
+    <button id="chipx" type="button" aria-label="Remove attached CV" title="Remove">&times;</button>
+  </div>
+  <div class="composer">
+    <textarea id="msg" rows="1" placeholder="Type your answer…" disabled></textarea>
+    <label for="cv">CV<input id="cv" type="file" accept=".pdf,.txt"></label>
+    <button id="send" disabled>Send</button>
+  </div>
 </form>
 <script>
 const log = document.getElementById("log");
@@ -204,7 +230,21 @@ const form = document.getElementById("form");
 const msg = document.getElementById("msg");
 const sendBtn = document.getElementById("send");
 const cv = document.getElementById("cv");
+const chip = document.getElementById("chip");
+const chipName = document.getElementById("chipname");
 let over = false;
+let attachment = null;  // {path, name} held until the user's next Send (AC 1)
+
+// AC 5, the one fixed line this page owns rather than app/prompts.py: after the
+// run is over the graph sits at END, so no graph turn exists to say this.
+const CV_AFTER_OVER =
+  "The fit verdicts above already used the CV you sent earlier. I can't judge a " +
+  "different CV in this chat — reload the page to start a fresh one.";
+
+function showChip() {
+  chip.hidden = !attachment;
+  if (attachment) chipName.textContent = attachment.name;
+}
 
 const atBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < 40;
 const toBottom = () => { log.scrollTop = log.scrollHeight; };
@@ -231,7 +271,7 @@ function addError(text, retryWith) {
   btn.textContent = "Try again";
   btn.addEventListener("click", () => {
     btn.closest(".row").remove();
-    send(retryWith);
+    send(...retryWith);  // [wire text, what the bubble showed]
   });
   bubble.parentElement.append(btn);
 }
@@ -260,7 +300,10 @@ function openPlaceholder(bubble) {
 }
 
 function setBusy(busy) {
-  msg.disabled = sendBtn.disabled = cv.disabled = busy || over;
+  msg.disabled = sendBtn.disabled = busy || over;
+  // NOT `|| over`: the upload control stays clickable once the run is over so
+  // picking a file can still surface CV_AFTER_OVER (AC 5).
+  cv.disabled = busy;
   // autofocus on a phone summons the keyboard over the conversation (AC 7)
   if (!busy && !over && matchMedia("(min-width: 640px)").matches) msg.focus();
 }
@@ -327,14 +370,16 @@ const OFFLINE = [
   "Something got in the way of reaching the server. Give it another go.",
 ];
 
-async function send(message) {
+// `shown` is what the user's bubble displays: with an attachment the wire text
+// carries the server-side path, which is noise in the transcript (AC 1).
+async function send(message, shown) {
   setBusy(true);
-  if (message) add("user", message);
+  if (message) add("user", shown || message);
   const draft = add("ai", "");
   const state = {
     draft: draft.parentElement, body: document.createElement("span"),
     dropPh: openPlaceholder(draft), queue: "", finals: [], closed: false,
-    sent: message,  // this turn's user text, for a retry button on its error
+    sent: [message, shown],  // this turn's send, for a retry button on its error
   };
   draft.append(state.body);
   state.painter = startPainter(state);
@@ -382,16 +427,29 @@ msg.addEventListener("keydown", (e) => {  // Enter sends, Shift+Enter newlines (
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const m = msg.value.trim();
-  if (!m || msg.disabled) return;
+  if ((!m && !attachment) || msg.disabled) return;
+  const file = attachment;
+  attachment = null;
+  showChip();
   msg.value = "";
   grow();
-  send(m);
+  if (!file) return send(m);
+  // The path travels on its own line so the graph can pick it out of whatever
+  // the user typed with it; the bubble shows the filename, not the path.
+  send(m ? m + "\n" + file.path : file.path,
+       m ? m + "\nAttached: " + file.name : "Attached: " + file.name);
+});
+
+document.getElementById("chipx").addEventListener("click", () => {
+  attachment = null;
+  showChip();
 });
 
 cv.addEventListener("change", async () => {
   const file = cv.files[0];
-  if (!file) return;
   cv.value = "";
+  if (!file) return;
+  if (over) return void add("ai", CV_AFTER_OVER);  // AC 5: nothing left to run
   setBusy(true);
   const res = await fetch("/upload?name=" + encodeURIComponent(file.name), {
     method: "POST",
@@ -402,7 +460,10 @@ cv.addEventListener("change", async () => {
     setBusy(false);
     return;
   }
-  send((await res.json()).path);  // feeds story 005's path intake
+  // AC 1: held as a chip, never auto-sent — the path goes out with the next Send.
+  attachment = { path: (await res.json()).path, name: file.name };
+  showChip();
+  setBusy(false);
 });
 
 send("");  // page load starts the interview (AC 1)

@@ -1,6 +1,17 @@
-"""Settings from .env — keys, model ids, RPMs are config, never literals (AD-2)."""
+"""Settings from .env — keys, model ids, RPMs are config, never literals (AD-2).
+
+Also the one home for the upload directory constant (story 009): the server
+writes uploads there and the graph decides "is this message an upload?" from it.
+It lives here because this module imports nothing app-internal — importing it
+from app/server.py instead would close the circle server -> graph -> cv -> server.
+"""
+
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ROOT = Path(__file__).resolve().parent.parent
+CV_DIR = ROOT / "data" / "cv"  # gitignored; /upload returns ABSOLUTE paths here
 
 
 class Settings(BaseSettings):
