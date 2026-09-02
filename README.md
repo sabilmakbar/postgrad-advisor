@@ -76,7 +76,7 @@ the composer** — it is sent only when you press Send, with whatever you typed.
 | At the CV step | Parsed straight away — no repeated ask |
 | At the confirm step | Treated as "use this one instead": re-parsed, and any correction you typed is applied too |
 | On the final (10th) interview turn | The run ends honestly, saying the CV is held but the interview lacked detail — start a fresh chat |
-| After the run is over | The page says the verdicts already used the earlier CV; a fresh chat is needed |
+| After the run is over (verdicts done, or the interview hit the 10-turn cap) | The page says the chat has finished and a new CV can't change it; reload for a fresh one |
 
 Parsing is **local** (pypdf / plain text). Extracted facts are echoed back — degree, GPA, publications,
 English test — for you to confirm or correct before anything is judged.

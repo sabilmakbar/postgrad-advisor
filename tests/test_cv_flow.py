@@ -461,4 +461,7 @@ def test_page_holds_the_upload_and_owns_the_post_over_line():
     assert "send((await res.json()).path)" not in page  # AC 1: auto-send removed
     assert 'id="chip"' in page and "attachment = { path:" in page
     assert "cv.disabled = busy;" in page  # AC 5: upload stays live once over
-    assert "The fit verdicts above already used the CV you sent earlier." in page
+    assert "This chat has already finished, so a new CV can't change anything in it." in page
+    # Both paths to `over` must read true, so the line may not name the verdicts:
+    # the turn cap also ends the run, with no verdicts and possibly no earlier CV.
+    assert "fit verdicts above" not in page

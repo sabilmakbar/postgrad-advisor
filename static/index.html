@@ -240,9 +240,15 @@ let attachment = null;  // {path, name} held until the user's next Send (AC 1)
 
 // AC 5, the one fixed line this page owns rather than app/prompts.py: after the
 // run is over the graph sits at END, so no graph turn exists to say this.
+// Route-agnostic on purpose: TWO paths set `over`. The fit run finishing is one;
+// the interview hitting MAX_TURNS is the other (graph.py returns ended=True, the
+// router sends it to END, so snapshot.next is empty and the server reports
+// "over"). On that second path no verdicts ran and there may be no earlier CV at
+// all, so copy naming the verdicts would be false — the same defect class as
+// offline being reported as quota exhaustion.
 const CV_AFTER_OVER =
-  "The fit verdicts above already used the CV you sent earlier. I can't judge a " +
-  "different CV in this chat — reload the page to start a fresh one.";
+  "This chat has already finished, so a new CV can't change anything in it. " +
+  "Reload the page to start a fresh one and send it there.";
 
 function showChip() {
   chip.hidden = !attachment;
