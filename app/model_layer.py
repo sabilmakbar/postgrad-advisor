@@ -155,6 +155,13 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
                         model=model_id,
                         api_key=settings.google_api_key,
                         rate_limiter=_limiter("google", model_id, rpm),
+                        timeout=settings.model_timeout,
+                        # This layer owns retrying (see _compose). A client-side
+                        # retry count multiplies INSIDE one invoke, before our
+                        # predicates see anything, so leaving it on would make
+                        # the worst case provider_retries x our_attempts x
+                        # providers instead of our_attempts x providers.
+                        max_retries=0,
                     ),
                     _GOOGLE_TRANSIENT,
                 )
@@ -169,6 +176,8 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
                         model=model_id,
                         api_key=settings.groq_api_key,
                         rate_limiter=_limiter("groq", model_id, rpm),
+                        request_timeout=settings.model_timeout,  # ChatGroq's spelling
+                        max_retries=0,  # this layer owns retrying
                     ),
                     _GROQ_TRANSIENT,
                 )
@@ -187,6 +196,8 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
                             "https://api.cloudflare.com/client/v4/accounts/"
                             f"{settings.cloudflare_account_id}/ai/v1"
                         ),
+                        request_timeout=settings.model_timeout,  # ChatOpenAI's spelling
+                        max_retries=0,  # this layer owns retrying
                     ),
                     _OPENAI_TRANSIENT,
                 )

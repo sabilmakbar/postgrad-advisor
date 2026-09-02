@@ -45,5 +45,14 @@ class Settings(BaseSettings):
     gemini_light_rpm: float | None = None
     groq_light_rpm: float | None = None
 
+    # Per-request ceiling on a single model call. Without it a provider that is
+    # merely SLOW (rather than erroring) blocks forever: no exception is raised,
+    # so the retry predicates never fire and the fallback chain is never
+    # reached. Measured 2026-09-02 — one light-tier call returned 200 OK after
+    # 926 seconds and never failed over. Generous enough for the shortlist call
+    # (a 120-candidate prompt with structured output), tight enough that
+    # falling over to the next provider beats waiting.
+    model_timeout: float = 60
+
 
 settings = Settings()

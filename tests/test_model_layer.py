@@ -251,3 +251,44 @@ def test_dead_id_warned_and_skipped_at_build(monkeypatch, caplog):
     assert constructed == [settings.groq_model]  # gemini skipped, groq kept
     assert len(models) == 1
     assert "404s on generation" in caplog.text
+
+
+def test_every_provider_gets_a_finite_timeout_and_owns_no_retries(monkeypatch):
+    """A provider that is merely SLOW must not block forever.
+
+    Without a per-request timeout no exception is raised, so the transient
+    predicates never fire and the fallback chain is unreachable — measured
+    2026-09-02, one light call returned 200 OK after 926s and never failed
+    over. The timeout is what makes _compose's fallbacks reachable at all.
+
+    max_retries=0 keeps retrying in ONE place: a client-side retry count
+    multiplies inside a single invoke, before our predicates see anything.
+    """
+    seen: list[dict] = []
+
+    class Recorder(RunnableLambda):
+        def __init__(self, model, **kwargs):
+            seen.append({"model": model, **kwargs})
+            super().__init__(lambda _: f"ok:{model}")
+
+        def with_structured_output(self, schema):
+            return self
+
+    for name in ("ChatGoogleGenerativeAI", "ChatGroq", "ChatOpenAI"):
+        monkeypatch.setattr(model_layer, name, Recorder)
+    monkeypatch.setattr(model_layer, "_probe_status", lambda provider, model_id: 200)
+    monkeypatch.setattr(settings, "google_api_key", "k")
+    monkeypatch.setattr(settings, "groq_api_key", "k")
+    monkeypatch.setattr(settings, "cloudflare_api_token", "k")
+    monkeypatch.setattr(settings, "cloudflare_account_id", "acct")
+    monkeypatch.setattr(settings, "workers_ai_model", "wa-model")
+    monkeypatch.setattr(settings, "model_timeout", 12.5)  # distinctive, not the default
+
+    model_layer._build_models("heavy")
+
+    assert len(seen) == 3, f"expected all three providers, got {[s['model'] for s in seen]}"
+    for kwargs in seen:
+        # Providers spell it differently; exactly one spelling must be present.
+        timeout = kwargs.get("timeout", kwargs.get("request_timeout"))
+        assert timeout == 12.5, f"{kwargs['model']} did not receive the configured timeout"
+        assert kwargs.get("max_retries") == 0, f"{kwargs['model']} kept client-side retries"
