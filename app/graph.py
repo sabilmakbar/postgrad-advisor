@@ -10,6 +10,7 @@ light tier, then ask the next question on the heavy tier. Drive it with
 """
 
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
@@ -26,9 +27,18 @@ from app.prompts import (
     TURN_CAP_MESSAGE,
 )
 from app.shortlist import shortlist_node
-from app.state import InterviewState, SlotUpdate
+from app.state import CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate
 
 MAX_TURNS = 10  # AC 2: cap enforced here, not in the prompt
+
+# LangGraph 1.2 warns on deserializing unregistered types from a checkpoint and
+# will block them outright in a later release. Declaring ours keeps the upgrade
+# from breaking us. Every app.state model is listed, not just the ones on the
+# state today: an omitted type does NOT raise — it silently comes back as a
+# plain dict, so a partial allowlist trades a loud warning for a quiet type
+# downgrade. tests/test_graph_serde.py fails if a model is added and not listed.
+CHECKPOINT_TYPES = (CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate)
+_SERDE = JsonPlusSerializer(allowed_msgpack_modules=list(CHECKPOINT_TYPES))
 
 _REQUIRED_SLOTS = ("degree_intent", "field", "target_regions")
 
@@ -153,4 +163,4 @@ def build_graph(checkpointer=None):
         ["cv_intake", "cv_confirm", "fit"],
     )
     g.add_edge("fit", END)
-    return g.compile(checkpointer=checkpointer or InMemorySaver())
+    return g.compile(checkpointer=checkpointer or InMemorySaver(serde=_SERDE))
