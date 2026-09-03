@@ -47,7 +47,13 @@ def _failing(counter: dict, exc: Exception) -> RunnableLambda:
     return RunnableLambda(_f)
 
 
-def test_429_retries_then_falls_back():
+def test_429_retries_then_falls_back(monkeypatch):
+    # `model_attempts` is patched to a distinctive value rather than compared
+    # against the setting: asserting calls == settings.model_attempts would pass
+    # for ANY value, including a hard-coded literal in _compose. Patching pins
+    # that the setting actually drives the retry count (owner cut the default
+    # from 3 to 2 on 2026-09-03, so the number must stay tunable in one place).
+    monkeypatch.setattr(settings, "model_attempts", 4)
     primary_calls = {"calls": 0}
     chain = _compose(
         [
@@ -58,8 +64,7 @@ def test_429_retries_then_falls_back():
     )
     # no exception reaches the caller
     assert chain.invoke("hi") == "ok from fallback"
-    # primary was retried (3 attempts) before falling back
-    assert primary_calls["calls"] == 3
+    assert primary_calls["calls"] == 4  # retried per the setting, then fell back
 
 
 def test_401_skips_retries_and_falls_back():
@@ -191,8 +196,12 @@ def test_structured_chains_are_tagged_nostream(monkeypatch):
 
 
 def test_light_retry_then_fallback_same_seam(monkeypatch):
-    # AC 3: light rides the same _compose — transient error retried 3x on the
-    # light primary, then falls back to the next LIGHT model, never to heavy.
+    # AC 3: light rides the same _compose — transient error retried on the light
+    # primary, then falls back to the next LIGHT model, never to heavy. The
+    # attempt count is patched rather than hard-coded so this test pins the
+    # SEAM (light shares _compose) and not the patience budget, which the owner
+    # tunes in app/config.py.
+    monkeypatch.setattr(settings, "model_attempts", 3)
     constructed, invoked = _fake_providers(
         monkeypatch, fail={LIGHT_IDS[0]: httpx.ConnectError("boom")}
     )

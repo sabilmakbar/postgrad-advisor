@@ -49,10 +49,17 @@ class Settings(BaseSettings):
     # merely SLOW (rather than erroring) blocks forever: no exception is raised,
     # so the retry predicates never fire and the fallback chain is never
     # reached. Measured 2026-09-02 — one light-tier call returned 200 OK after
-    # 926 seconds and never failed over. Generous enough for the shortlist call
-    # (a 120-candidate prompt with structured output), tight enough that
-    # falling over to the next provider beats waiting.
-    model_timeout: float = 60
+    # 926 seconds and never failed over.
+    #
+    # These two are a PATIENCE budget and must be read together: worst case is
+    # model_attempts x providers x model_timeout per chain, and one interview
+    # turn runs up to three chains (light parser, its heavy degrade, then the
+    # heavy question). At 3 attempts / 60s that was 20-25 minutes before the
+    # user saw an error, which is worse than failing fast. At 2 / 30s it is
+    # ~3 minutes per chain. Owner's call, 2026-09-03: give up on a slow primary
+    # sooner and let the faster backup serve it.
+    model_timeout: float = 30
+    model_attempts: int = 2
 
 
 settings = Settings()

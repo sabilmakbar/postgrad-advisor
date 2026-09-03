@@ -224,7 +224,7 @@ def _compose(
     retried = [
         m.with_retry(
             retry_if_exception_type=transient,
-            stop_after_attempt=3,
+            stop_after_attempt=settings.model_attempts,
             exponential_jitter_params=jitter_params,
         )
         for m, transient in models
