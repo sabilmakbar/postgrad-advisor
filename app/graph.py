@@ -20,6 +20,7 @@ from app.model_layer import chat, structured
 from app.prompts import (
     CV_AFTER_CAP,
     CV_RECEIVED,
+    FIRST_QUESTION,
     INTERVIEWER_INSTRUCTIONS,
     PARSER_INSTRUCTIONS,
     PERSONA,
@@ -53,47 +54,56 @@ def _next_open_slot(state: InterviewState) -> str | None:
 def _interviewer(state: InterviewState) -> dict:
     """One agent turn. On revisits, ``interrupt()`` is the first effect, so the
     node's re-run on resume never repeats a model call."""
+    # Turn 0 is deterministic — nothing captured, so the slot is always the
+    # first required one and the model would be asked a constant question. Fixed
+    # text costs no quota and removes the rate-limiter wait from the landing.
+    # The route sends us straight back here, where turns > 0 now interrupts on
+    # this question exactly as it would on a generated one.
+    if state.turns == 0:
+        return {"messages": [("ai", FIRST_QUESTION)], "turns": 1}
+
     messages = list(state.messages)
     updates: dict = {}
     decline = ""
     upload = None
 
-    if state.turns > 0:  # a question is pending: receive and parse the answer
-        answer = interrupt(messages[-1][1])
-        # Story 009 AC 2: a CV arriving mid-interview is handled in code. The
-        # path never reaches the LLM — it answers no slot, and improvising about
-        # a file it cannot open was the live incident.
-        upload, answer = split_upload(answer)
-        if upload:
-            updates["pending_cv"] = upload
-        if upload and not answer:
-            # The attachment came alone, so it answers nothing: acknowledge it
-            # and leave the pending question standing. It is still in the log
-            # right above, so restating it only made the user read it twice
-            # (fix round 2). Two uploads in a row get one acknowledgement each,
-            # never a stacked one.
-            if messages[-1] != ("ai", CV_RECEIVED):
-                messages.append(("ai", CV_RECEIVED))
-            return {"pending_cv": upload, "messages": messages}
-        # The question being answered is not always messages[-2]: an
-        # acknowledgement can sit between it and this answer (fix round 2).
-        question = next(t for r, t in reversed(messages) if r == "ai" and t != CV_RECEIVED)
-        messages.append(("human", answer))
-        parsed = structured(SlotUpdate, tier="light").invoke(
-            [
-                ("system", PARSER_INSTRUCTIONS),
-                ("human", f"Question asked: {question}\nAnswer: {answer}"),
-            ]
-        )
-        for name in ("degree_intent", "field", "focus_area"):
-            if getattr(parsed, name):
-                updates[name] = getattr(parsed, name)
-        for name in ("target_regions", "constraints"):
-            new = [v for v in getattr(parsed, name) if v not in getattr(state, name)]
-            if new:
-                updates[name] = getattr(state, name) + new
-        if parsed.postdoc_interest:  # FR-002: decline is code-enforced, not prompt hope
-            decline = POSTDOC_DECLINE + "\n\n"
+    # turns >= 1 here: turn 0 returned above. A question is pending, so
+    # receive and parse the answer to it.
+    answer = interrupt(messages[-1][1])
+    # Story 009 AC 2: a CV arriving mid-interview is handled in code. The
+    # path never reaches the LLM — it answers no slot, and improvising about
+    # a file it cannot open was the live incident.
+    upload, answer = split_upload(answer)
+    if upload:
+        updates["pending_cv"] = upload
+    if upload and not answer:
+        # The attachment came alone, so it answers nothing: acknowledge it
+        # and leave the pending question standing. It is still in the log
+        # right above, so restating it only made the user read it twice
+        # (fix round 2). Two uploads in a row get one acknowledgement each,
+        # never a stacked one.
+        if messages[-1] != ("ai", CV_RECEIVED):
+            messages.append(("ai", CV_RECEIVED))
+        return {"pending_cv": upload, "messages": messages}
+    # The question being answered is not always messages[-2]: an
+    # acknowledgement can sit between it and this answer (fix round 2).
+    question = next(t for r, t in reversed(messages) if r == "ai" and t != CV_RECEIVED)
+    messages.append(("human", answer))
+    parsed = structured(SlotUpdate, tier="light").invoke(
+        [
+            ("system", PARSER_INSTRUCTIONS),
+            ("human", f"Question asked: {question}\nAnswer: {answer}"),
+        ]
+    )
+    for name in ("degree_intent", "field", "focus_area"):
+        if getattr(parsed, name):
+            updates[name] = getattr(parsed, name)
+    for name in ("target_regions", "constraints"):
+        new = [v for v in getattr(parsed, name) if v not in getattr(state, name)]
+        if new:
+            updates[name] = getattr(state, name) + new
+    if parsed.postdoc_interest:  # FR-002: decline is code-enforced, not prompt hope
+        decline = POSTDOC_DECLINE + "\n\n"
 
     merged = state.model_copy(update=updates)
     capped = not merged.is_complete() and state.turns >= MAX_TURNS

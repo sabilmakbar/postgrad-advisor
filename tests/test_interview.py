@@ -13,8 +13,8 @@ from langgraph.types import Command
 
 import app.graph as graph_mod
 import app.model_layer as model_layer
-from app.graph import build_graph
-from app.prompts import CV_REQUEST, POSTDOC_DECLINE, TURN_CAP_MESSAGE
+from app.graph import _REQUIRED_SLOTS, build_graph
+from app.prompts import CV_REQUEST, FIRST_QUESTION, POSTDOC_DECLINE, TURN_CAP_MESSAGE
 from app.state import InterviewState, SlotUpdate
 
 
@@ -61,13 +61,22 @@ def _thread():
 def test_first_turn_targets_degree_intent_and_pauses(monkeypatch):
     # AC 1: fresh session -> one agent question aimed at degree_intent, then the
     # graph pauses for the answer; nothing handed off / recommended.
-    tiers, ask_calls = _wire(monkeypatch, questions=["Q-intent"], parses=[])
+    #
+    # Turn 0 is FIXED TEXT, not a model call: its input was fully determined
+    # (no messages, and the open slot is always _REQUIRED_SLOTS[0]), so the call
+    # was constant-input with variable output. `questions=[]` is the load-bearing
+    # part — the strict iterator makes any model call on this turn raise
+    # StopIteration, so this asserts the quota is not spent, not merely that the
+    # text matches.
+    tiers, ask_calls = _wire(monkeypatch, questions=[], parses=[])
     state = build_graph().invoke({}, _thread())
-    assert state["messages"] == [("ai", "Q-intent")]
+    assert state["messages"] == [("ai", FIRST_QUESTION)]
+    assert ask_calls == []  # no model was asked anything
     assert "__interrupt__" in state  # paused awaiting the user's answer
     assert not state.get("handed_off")
-    # the slot context the model was steered with names degree_intent first
-    assert "degree_intent" in ask_calls[0][-1][1]
+    # the fixed question still targets the first required slot
+    assert _REQUIRED_SLOTS[0] == "degree_intent"
+    assert "taught" in FIRST_QUESTION and "research" in FIRST_QUESTION
 
 
 def test_interview_fills_state_and_hands_off(monkeypatch):
@@ -78,7 +87,9 @@ def test_interview_fills_state_and_hands_off(monkeypatch):
     monkeypatch.setattr(graph_mod, "shortlist_node", lambda s: {"handed_off": True})
     tiers, _ = _wire(
         monkeypatch,
-        questions=["Q-intent", "Q-field", "Q-field-narrower", "Q-region"],
+        # Turn 0 is fixed text, and the 4th answer completes the slots so no
+        # question follows it: 3 generated questions, not 4.
+        questions=["Q-intent", "Q-field", "Q-field-narrower"],
         parses=[
             SlotUpdate(degree_intent="phd"),
             SlotUpdate(),  # vague answer: nothing extracted -> follow-up
@@ -113,7 +124,7 @@ def test_postdoc_answer_gets_scope_decline(monkeypatch):
     # no slots filled, interview continues (no handoff).
     _wire(
         monkeypatch,
-        questions=["Q-intent", "Q-intent-again"],
+        questions=["Q-intent-again"],  # turn 0 is fixed text
         parses=[SlotUpdate(postdoc_interest=True)],
     )
     g = build_graph()
@@ -127,12 +138,13 @@ def test_postdoc_answer_gets_scope_decline(monkeypatch):
 
 
 def test_turn_cap_ends_gracefully_without_handoff(monkeypatch):
-    # Dev-note requirement: cap triggers at 10 agent turns. Exactly 10 questions
-    # are scripted — an 11th ask would StopIteration. Counterpart to the
+    # Dev-note requirement: cap triggers at 10 agent turns. Exactly 9 questions
+    # are scripted, because turn 0 is fixed text and spends no model call — a
+    # 10th ask would StopIteration. Counterpart to the
     # handoff test above: incomplete state ends at END, never at handoff.
     _wire(
         monkeypatch,
-        questions=[f"Q{i}" for i in range(1, 11)],
+        questions=[f"Q{i}" for i in range(1, 10)],  # 9 generated: turn 0 is fixed
         parses=[SlotUpdate() for _ in range(10)],
     )
     g = build_graph()

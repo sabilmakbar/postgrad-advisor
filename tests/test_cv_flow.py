@@ -24,6 +24,7 @@ from app.prompts import (
     CV_RECEIVED,
     CV_REQUEST,
     CV_UNREADABLE,
+    FIRST_QUESTION,
     TURN_CAP_MESSAGE,
 )
 from app.state import CVFacts, SlotUpdate
@@ -158,7 +159,7 @@ def test_upload_mid_interview_is_intercepted_in_code(monkeypatch, cv_dir):
     """AC 2: the path is stored, answered with the fixed line, and the interview
     carries on. `parses=()` is the proof that no LLM saw it — a slot-parser call
     would raise StopIteration."""
-    _wire(monkeypatch, questions=["Q1"], parses=())
+    _wire(monkeypatch, questions=(), parses=())
     path = _upload(cv_dir)
     g = build_graph()
     g.invoke({}, _thread())
@@ -167,7 +168,7 @@ def test_upload_mid_interview_is_intercepted_in_code(monkeypatch, cv_dir):
     assert state["pending_cv"] == path
     # fix round 2: the acknowledgement alone — the open question is already in
     # the log right above it and is not restated
-    assert state["messages"][-2:] == [("ai", "Q1"), ("ai", CV_RECEIVED)]
+    assert state["messages"][-2:] == [("ai", FIRST_QUESTION), ("ai", CV_RECEIVED)]
     assert not any(path in text for _, text in state["messages"])  # path never in the log
     assert state["__interrupt__"]  # still interviewing
     assert not state.get("handed_off")
@@ -176,7 +177,7 @@ def test_upload_mid_interview_is_intercepted_in_code(monkeypatch, cv_dir):
     again = _upload(cv_dir, "cafebabe.txt")
     state = g.invoke(Command(resume=again), _thread())
     assert state["pending_cv"] == again
-    assert state["messages"][-2:] == [("ai", "Q1"), ("ai", CV_RECEIVED)]
+    assert state["messages"][-2:] == [("ai", FIRST_QUESTION), ("ai", CV_RECEIVED)]
 
 
 def test_the_answer_after_an_upload_is_parsed_against_the_open_question(
@@ -187,7 +188,7 @@ def test_the_answer_after_an_upload_is_parsed_against_the_open_question(
     seen = []
     _wire(
         monkeypatch,
-        questions=["Q1", "Q2"],
+        questions=["Q2"],
         parses=[SlotUpdate(degree_intent="phd")],
         seen=seen,
     )
@@ -196,7 +197,7 @@ def test_the_answer_after_an_upload_is_parsed_against_the_open_question(
     g.invoke(Command(resume=_upload(cv_dir)), _thread())  # attachment alone
     state = g.invoke(Command(resume="a PhD, please"), _thread())
 
-    assert seen[0][-1][1] == "Question asked: Q1\nAnswer: a PhD, please"
+    assert seen[0][-1][1] == f"Question asked: {FIRST_QUESTION}\nAnswer: a PhD, please"
     assert state["degree_intent"] == "phd"
 
 
@@ -206,7 +207,7 @@ def test_a_second_path_in_one_message_never_reaches_the_llm_or_the_log(
     """Fix round 2: only the first upload-shaped line is the attachment; the
     rest are dropped, not passed on as the typed remainder. `parses=()` proves
     no slot-parser call happened — a path as an 'answer' is the live incident."""
-    _wire(monkeypatch, questions=["Q1"], parses=())
+    _wire(monkeypatch, questions=(), parses=())
     first, second = _upload(cv_dir, "one.txt"), _upload(cv_dir, "two.txt")
     g = build_graph()
     g.invoke({}, _thread())
@@ -222,7 +223,7 @@ def _at_the_turn_cap(monkeypatch, cv_dir):
     MAX_TURNS, so the NEXT answer takes the capped branch."""
     _wire(
         monkeypatch,
-        questions=[f"Q{i}" for i in range(1, 11)],
+        questions=[f"Q{i}" for i in range(1, 10)],  # turn 0 is fixed text: 9 generated, not 10
         parses=[SlotUpdate() for _ in range(10)],
     )
     g = build_graph()
@@ -261,7 +262,7 @@ def test_a_cv_held_from_an_earlier_turn_is_answered_honestly_at_the_cap(
 def test_normal_answer_still_reaches_the_interviewer(monkeypatch, cv_dir):
     """Paired positive for the interception guard: a non-upload answer is parsed
     into slots and gets the next question, exactly as before."""
-    _wire(monkeypatch, questions=["Q1", "Q2"], parses=[SlotUpdate(degree_intent="phd")])
+    _wire(monkeypatch, questions=["Q2"], parses=[SlotUpdate(degree_intent="phd")])
     g = build_graph()
     g.invoke({}, _thread())
     state = g.invoke(Command(resume="a PhD, please"), _thread())
@@ -278,7 +279,7 @@ def test_text_sent_with_an_upload_is_answered_and_the_cv_held(monkeypatch, cv_di
     seen = []
     _wire(
         monkeypatch,
-        questions=["Q1", "Q2"],
+        questions=["Q2"],
         parses=[SlotUpdate(degree_intent="phd")],
         seen=seen,
     )
@@ -305,7 +306,7 @@ def test_cv_request_is_checkpointed_when_the_intake_interrupt_fires(monkeypatch)
     re-emitted one turn late as a dead turn. Verified failing on the pre-fix
     code before this landed: the interrupt carried CV_REQUEST while
     state.messages held only [Q1, answer, SHORTLIST]."""
-    _wire(monkeypatch, questions=["Q1"], parses=[COMPLETE])
+    _wire(monkeypatch, questions=(), parses=[COMPLETE])
     g = build_graph()
     g.invoke({}, _thread())
     state = g.invoke(Command(resume="a PhD in ML in the UK"), _thread())
@@ -317,7 +318,7 @@ def test_cv_request_is_checkpointed_when_the_intake_interrupt_fires(monkeypatch)
 
 def test_unreadable_path_re_asks_once_then_accepts(monkeypatch, cv_dir):
     """The AC-4 rule holds on the retry leg too, and the loop still terminates."""
-    _wire(monkeypatch, questions=["Q1"], parses=[COMPLETE], facts=[FIRST_FACTS])
+    _wire(monkeypatch, questions=(), parses=[COMPLETE], facts=[FIRST_FACTS])
     g = build_graph()
     g.invoke({}, _thread())
     g.invoke(Command(resume="a PhD in ML in the UK"), _thread())
@@ -338,7 +339,7 @@ def test_pending_upload_is_consumed_without_a_cv_request_turn(monkeypatch, cv_di
     """AC 3: upload mid-interview, finish the interview, and intake goes
     straight to parse + echo — no CV request turn anywhere in the transcript."""
     path = _upload(cv_dir)
-    _wire(monkeypatch, questions=["Q1"], parses=[COMPLETE], facts=[FIRST_FACTS])
+    _wire(monkeypatch, questions=(), parses=[COMPLETE], facts=[FIRST_FACTS])
     g = build_graph()
     g.invoke({}, _thread())
     g.invoke(Command(resume=path), _thread())
@@ -360,7 +361,7 @@ def test_cv_path_at_confirm_replaces_the_extraction(monkeypatch, cv_dir):
     interpret a file path as a yes/no reply."""
     _wire(
         monkeypatch,
-        questions=["Q1"],
+        questions=(),
         parses=[COMPLETE],
         facts=[FIRST_FACTS, SECOND_FACTS],
         confirms=(),
@@ -386,7 +387,7 @@ def test_corrections_sent_with_a_replacement_cv_apply_to_the_new_extraction(
     replaced (3.95 is neither CV's own GPA, so both steps are proved)."""
     _wire(
         monkeypatch,
-        questions=["Q1"],
+        questions=(),
         parses=[COMPLETE],
         facts=[FIRST_FACTS, SECOND_FACTS],
         confirms=[CVConfirmation(confirmed=False, corrections=CVFacts(gpa="3.95 / 4.0"))],
@@ -410,7 +411,7 @@ def test_text_sent_with_the_cv_at_intake_is_applied_as_a_correction(monkeypatch,
     must still parse (not be swallowed into the filename) and the text applied."""
     _wire(
         monkeypatch,
-        questions=["Q1"],
+        questions=(),
         parses=[COMPLETE],
         facts=[FIRST_FACTS],
         confirms=[
@@ -432,7 +433,7 @@ def test_plain_confirmation_still_reaches_fit(monkeypatch, cv_dir):
     by the confirmation chain and the run proceeds to fit."""
     _wire(
         monkeypatch,
-        questions=["Q1"],
+        questions=(),
         parses=[COMPLETE],
         facts=[FIRST_FACTS],
         confirms=[CVConfirmation(confirmed=True)],

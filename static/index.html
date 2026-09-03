@@ -326,7 +326,11 @@ function handleEvent(block, state) {
   }
   const text = data.join("\n");
   if (event === "token") state.queue += text;
-  else if (event === "message") state.finals.push(["ai", text]);
+  else if (event === "message")
+    // typeFinals: paint it like a streamed reply. finish() then keeps the draft,
+    // since nothing in finals replaces it and the bubble has text.
+    if (state.typeFinals) state.queue += text;
+    else state.finals.push(["ai", text]);
   // Story 010 seam: the error event carries one flat string today. When it
   // gains a `kind`, branch here for offline-vs-quota copy — no kinds are
   // invented client-side until the contract carries them.
@@ -381,13 +385,18 @@ const OFFLINE = [
 
 // `shown` is what the user's bubble displays: with an attachment the wire text
 // carries the server-side path, which is noise in the transcript (AC 1).
-async function send(message, shown) {
+// `typeFinals` routes code-rendered messages through the painter instead of
+// landing them as instant blocks. Used only for the bootstrap turn, whose reply
+// is now fixed text: after a typed greeting, the first question appearing
+// fully-formed reads as UI chrome rather than the agent speaking.
+async function send(message, shown, typeFinals) {
   setBusy(true);
   if (message) add("user", shown || message);
   const draft = add("ai", "");
   const state = {
     draft: draft.parentElement, body: document.createElement("span"),
     dropPh: openPlaceholder(draft), queue: "", finals: [], closed: false,
+    typeFinals,
     sent: [message, shown],  // this turn's send, for a retry button on its error
   };
   draft.append(state.body);
@@ -508,7 +517,8 @@ function typeIntro() {
   });
 }
 
-typeIntro().then(() => send(""));  // greeting, then the interview starts (AC 1)
+// greeting, then the interview's fixed first question, typed the same way
+typeIntro().then(() => send("", undefined, true));
 </script>
 </body>
 </html>

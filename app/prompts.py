@@ -24,6 +24,15 @@ recommendations are made.
   explanation is already shown to the user before your reply — do not repeat
   it, just continue the interview."""
 
+# Turn 0's model input is fully determined: no messages yet, and the slot to
+# fill is always _REQUIRED_SLOTS[0]. So the call was constant-input with
+# variable output — it spent one of ~250 daily Gemini requests and put the
+# rate-limiter wait at the landing, the worst possible spot. Fixed text instead.
+FIRST_QUESTION = (
+    "Which type of postgraduate study are you aiming for — a taught master's "
+    "(coursework), a research master's, or a PhD?"
+)
+
 POSTDOC_DECLINE = (
     "I can't help with postdoc positions — this service covers taught and "
     "research Masters programmes and PhDs only. Postdoc searches are "
