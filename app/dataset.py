@@ -26,6 +26,12 @@ class University(BaseModel):
     rank_scope: Literal["world", "regional"]
     fields: list[str] = Field(min_length=1)
     degree_types: list[DegreeType] = Field(min_length=1)
+    # Derived by scripts/ingest_qs.py from the QS indicator scores, never hand
+    # edited. base_score is the QS weighted composite (0-100, comparable across
+    # the whole list including banded ranks); tilt is employer reputation minus
+    # citations per faculty. None = the institution is absent from the source CSV.
+    base_score: float | None = None
+    tilt: float | None = None
     verified: bool
     confidence: Literal["high", "medium", "low"]
     note: str | None = None
