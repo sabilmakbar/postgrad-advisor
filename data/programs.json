@@ -20,7 +20,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 98.4,
+      "tilt": 5.0
     },
     {
       "university": "University of Oxford",
@@ -40,7 +42,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 97.0,
+      "tilt": 9.0
     },
     {
       "university": "University of Cambridge",
@@ -60,7 +64,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 96.3,
+      "tilt": 11.4
     },
     {
       "university": "ETH Zurich",
@@ -79,7 +85,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 95.8,
+      "tilt": -2.5
     },
     {
       "university": "UCL",
@@ -99,7 +107,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 94.9,
+      "tilt": 18.5
     },
     {
       "university": "EPFL",
@@ -118,7 +128,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 89.4,
+      "tilt": -5.1
     },
     {
       "university": "Technical University of Munich",
@@ -137,7 +149,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 89.4,
+      "tilt": 7.1
     },
     {
       "university": "PSL University",
@@ -156,7 +170,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 87.9,
+      "tilt": 13.4
     },
     {
       "university": "University of Edinburgh",
@@ -175,7 +191,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 86.6,
+      "tilt": 43.9
     },
     {
       "university": "King's College London",
@@ -194,7 +212,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 87.6,
+      "tilt": 21.6
     },
     {
       "university": "The University of Manchester",
@@ -213,7 +233,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 85.8,
+      "tilt": 42.0
     },
     {
       "university": "Institut Polytechnique de Paris",
@@ -232,7 +254,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 84.8,
+      "tilt": 2.5
     },
     {
       "university": "Delft University of Technology",
@@ -250,7 +274,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 83.8,
+      "tilt": 5.8
     },
     {
       "university": "University of Bristol",
@@ -269,7 +295,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 82.0,
+      "tilt": 6.2
     },
     {
       "university": "London School of Economics and Political Science",
@@ -288,7 +316,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 80.1,
+      "tilt": 35.4
     },
     {
       "university": "University of Amsterdam",
@@ -307,7 +337,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 81.0,
+      "tilt": -14.6
     },
     {
       "university": "LMU Munich",
@@ -326,7 +358,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 79.7,
+      "tilt": 33.2
     },
     {
       "university": "KU Leuven",
@@ -345,7 +379,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 79.3,
+      "tilt": -31.2
     },
     {
       "university": "Sorbonne University",
@@ -364,7 +400,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 75.4,
+      "tilt": -6.7
     },
     {
       "university": "Heidelberg University",
@@ -383,7 +421,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 72.8,
+      "tilt": 30.8
     },
     {
       "university": "Massachusetts Institute of Technology (MIT)",
@@ -403,7 +443,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 99.0,
+      "tilt": 0.0
     },
     {
       "university": "Stanford University",
@@ -423,7 +465,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 97.9,
+      "tilt": 0.3
     },
     {
       "university": "Harvard University",
@@ -443,7 +487,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 96.7,
+      "tilt": 0.0
     },
     {
       "university": "California Institute of Technology (Caltech)",
@@ -461,7 +507,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 93.4,
+      "tilt": -0.8
     },
     {
       "university": "University of Chicago",
@@ -480,7 +528,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 92.2,
+      "tilt": 21.2
     },
     {
       "university": "University of Pennsylvania",
@@ -499,7 +549,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 91.7,
+      "tilt": 26.7
     },
     {
       "university": "Cornell University",
@@ -518,7 +570,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 90.8,
+      "tilt": 0.8
     },
     {
       "university": "University of California, Berkeley",
@@ -538,7 +592,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 90.5,
+      "tilt": 2.8
     },
     {
       "university": "Yale University",
@@ -557,7 +613,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 89.7,
+      "tilt": 35.2
     },
     {
       "university": "Princeton University",
@@ -576,7 +634,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 88.7,
+      "tilt": -0.2
     },
     {
       "university": "McGill University",
@@ -595,7 +655,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 88.2,
+      "tilt": 21.1
     },
     {
       "university": "University of Toronto",
@@ -614,7 +676,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 87.8,
+      "tilt": 30.3
     },
     {
       "university": "Johns Hopkins University",
@@ -633,7 +697,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 89.0,
+      "tilt": -6.6
     },
     {
       "university": "Columbia University",
@@ -652,7 +718,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 85.0,
+      "tilt": 55.4
     },
     {
       "university": "University of Michigan-Ann Arbor",
@@ -671,7 +739,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 84.2,
+      "tilt": 44.0
     },
     {
       "university": "University of British Columbia",
@@ -690,7 +760,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 84.9,
+      "tilt": 25.6
     },
     {
       "university": "University of California, Los Angeles (UCLA)",
@@ -709,7 +781,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 83.8,
+      "tilt": 15.7
     },
     {
       "university": "New York University (NYU)",
@@ -728,7 +802,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 80.7,
+      "tilt": 68.2
     },
     {
       "university": "Carnegie Mellon University",
@@ -746,7 +822,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 81.8,
+      "tilt": -4.2
     },
     {
       "university": "Northwestern University",
@@ -765,7 +843,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 84.5,
+      "tilt": 18.2
     },
     {
       "university": "National University of Singapore (NUS)",
@@ -785,7 +865,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 95.0,
+      "tilt": 2.3
     },
     {
       "university": "University of Hong Kong",
@@ -804,7 +886,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 93.4,
+      "tilt": -14.1
     },
     {
       "university": "Nanyang Technological University (NTU)",
@@ -823,7 +907,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 92.9,
+      "tilt": -3.2
     },
     {
       "university": "Peking University",
@@ -842,7 +928,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 91.8,
+      "tilt": 0.4
     },
     {
       "university": "Tsinghua University",
@@ -861,7 +949,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 90.4,
+      "tilt": 0.1
     },
     {
       "university": "Fudan University",
@@ -880,7 +970,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 87.8,
+      "tilt": 2.3
     },
     {
       "university": "The Chinese University of Hong Kong (CUHK)",
@@ -899,7 +991,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 86.8,
+      "tilt": -27.7
     },
     {
       "university": "Seoul National University",
@@ -918,7 +1012,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 85.0,
+      "tilt": 17.9
     },
     {
       "university": "The University of Tokyo",
@@ -937,7 +1033,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 85.3,
+      "tilt": 30.0
     },
     {
       "university": "The Hong Kong University of Science and Technology",
@@ -956,7 +1054,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 84.3,
+      "tilt": -30.3
     },
     {
       "university": "Shanghai Jiao Tong University",
@@ -975,7 +1075,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 83.8,
+      "tilt": -6.2
     },
     {
       "university": "Zhejiang University",
@@ -994,7 +1096,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 83.4,
+      "tilt": -2.8
     },
     {
       "university": "KAIST",
@@ -1033,7 +1137,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 79.8,
+      "tilt": 48.4
     },
     {
       "university": "Universiti Malaya",
@@ -1052,7 +1158,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 79.7,
+      "tilt": 49.3
     },
     {
       "university": "Yonsei University",
@@ -1071,7 +1179,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 82.4,
+      "tilt": 29.9
     },
     {
       "university": "Korea University",
@@ -1090,7 +1200,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 79.2,
+      "tilt": 27.2
     },
     {
       "university": "City University of Hong Kong",
@@ -1109,7 +1221,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 78.5,
+      "tilt": -53.3
     },
     {
       "university": "IIT Delhi",
@@ -1127,7 +1241,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 65.5,
+      "tilt": 1.9
     },
     {
       "university": "IIT Bombay",
@@ -1145,7 +1261,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 64.8,
+      "tilt": 13.8
     },
     {
       "university": "The University of Melbourne",
@@ -1165,7 +1283,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "high"
+      "confidence": "high",
+      "base_score": 90.0,
+      "tilt": 2.6
     },
     {
       "university": "The University of New South Wales (UNSW Sydney)",
@@ -1184,7 +1304,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 89.9,
+      "tilt": -3.4
     },
     {
       "university": "The University of Sydney",
@@ -1203,7 +1325,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 88.7,
+      "tilt": -0.1
     },
     {
       "university": "The Australian National University",
@@ -1222,7 +1346,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 86.7,
+      "tilt": -9.1
     },
     {
       "university": "Monash University",
@@ -1241,7 +1367,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 85.2,
+      "tilt": -5.5
     },
     {
       "university": "The University of Queensland",
@@ -1260,7 +1388,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 84.5,
+      "tilt": -14.7
     },
     {
       "university": "The University of Western Australia",
@@ -1279,7 +1409,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 73.5,
+      "tilt": -42.7
     },
     {
       "university": "The University of Adelaide",
@@ -1298,7 +1430,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 72.4,
+      "tilt": -7.1
     },
     {
       "university": "University of Auckland",
@@ -1317,7 +1451,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 77.2,
+      "tilt": -23.9
     },
     {
       "university": "University of Technology Sydney",
@@ -1336,7 +1472,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 69.8,
+      "tilt": -32.6
     },
     {
       "university": "Macquarie University",
@@ -1355,7 +1493,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 63.4,
+      "tilt": -29.1
     },
     {
       "university": "RMIT University",
@@ -1374,7 +1514,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 65.4,
+      "tilt": -31.0
     },
     {
       "university": "Queensland University of Technology",
@@ -1393,7 +1535,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 53.6,
+      "tilt": -32.1
     },
     {
       "university": "Curtin University",
@@ -1411,7 +1555,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 57.9,
+      "tilt": -50.3
     },
     {
       "university": "University of Wollongong",
@@ -1430,7 +1576,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 57.8,
+      "tilt": -62.5
     },
     {
       "university": "The University of Newcastle, Australia",
@@ -1449,7 +1597,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 53.6,
+      "tilt": -64.7
     },
     {
       "university": "University of Otago",
@@ -1468,7 +1618,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 56.2,
+      "tilt": -27.2
     },
     {
       "university": "Deakin University",
@@ -1487,7 +1639,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 55.3,
+      "tilt": -53.6
     },
     {
       "university": "Griffith University",
@@ -1506,7 +1660,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 49.3,
+      "tilt": -58.5
     },
     {
       "university": "Victoria University of Wellington",
@@ -1525,7 +1681,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 51.8,
+      "tilt": -12.1
     },
     {
       "university": "University of Cape Town",
@@ -1544,7 +1702,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 62.4,
+      "tilt": -13.1
     },
     {
       "university": "University of the Witwatersrand",
@@ -1563,7 +1723,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 47.0,
+      "tilt": 10.7
     },
     {
       "university": "Stellenbosch University",
@@ -1582,7 +1744,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 45.9,
+      "tilt": -22.7
     },
     {
       "university": "University of Johannesburg",
@@ -1601,7 +1765,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 45.3,
+      "tilt": -19.3
     },
     {
       "university": "Cairo University",
@@ -1620,7 +1786,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 42.3,
+      "tilt": 46.7
     },
     {
       "university": "University of Pretoria",
@@ -1639,7 +1807,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 41.7,
+      "tilt": 23.9
     },
     {
       "university": "The American University in Cairo",
@@ -1658,7 +1828,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 40.2,
+      "tilt": 34.7
     },
     {
       "university": "Ain Shams University",
@@ -1676,7 +1848,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 31.4,
+      "tilt": 35.3
     },
     {
       "university": "University of KwaZulu-Natal",
@@ -1695,7 +1869,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 30.6,
+      "tilt": -30.1
     },
     {
       "university": "Alexandria University",
@@ -1713,7 +1889,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 24.2,
+      "tilt": 20.7
     },
     {
       "university": "Mansoura University",
@@ -1731,7 +1909,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 18.6,
+      "tilt": 10.8
     },
     {
       "university": "North-West University",
@@ -1750,7 +1930,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 20.0,
+      "tilt": -10.0
     },
     {
       "university": "Universite Mohammed V de Rabat",
@@ -1769,7 +1951,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 14.3,
+      "tilt": -6.4
     },
     {
       "university": "University of Nairobi",
@@ -1788,7 +1972,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 18.2,
+      "tilt": 11.1
     },
     {
       "university": "Makerere University",
@@ -1807,7 +1993,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 18.1,
+      "tilt": -1.2
     },
     {
       "university": "University of Ghana",
@@ -1826,7 +2014,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 21.6,
+      "tilt": 1.6
     },
     {
       "university": "University of Lagos",
@@ -1845,7 +2035,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 15.2,
+      "tilt": 11.3
     },
     {
       "university": "University of Ibadan",
@@ -1864,7 +2056,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 17.2,
+      "tilt": 9.3
     },
     {
       "university": "Addis Ababa University",
@@ -1883,7 +2077,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 21.3,
+      "tilt": 9.6
     },
     {
       "university": "Rhodes University",
@@ -1902,7 +2098,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 18.7,
+      "tilt": -9.8
     },
     {
       "university": "Universidade de Sao Paulo (USP)",
@@ -1922,7 +2120,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 67.2,
+      "tilt": 40.7
     },
     {
       "university": "Pontificia Universidad Catolica de Chile",
@@ -1941,7 +2141,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 66.1,
+      "tilt": 84.4
     },
     {
       "university": "Universidad de Buenos Aires (UBA)",
@@ -1960,7 +2162,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 72.1,
+      "tilt": 93.5
     },
     {
       "university": "Universidad de Chile",
@@ -1979,7 +2183,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 59.4,
+      "tilt": 73.8
     },
     {
       "university": "Universidade Estadual de Campinas (Unicamp)",
@@ -1998,7 +2204,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 52.6,
+      "tilt": 13.7
     },
     {
       "university": "Universidad de los Andes",
@@ -2017,7 +2225,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "medium"
+      "confidence": "medium",
+      "base_score": 55.0,
+      "tilt": 79.7
     },
     {
       "university": "Universidad Nacional de Colombia",
@@ -2036,7 +2246,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 50.0,
+      "tilt": 84.0
     },
     {
       "university": "Pontificia Universidad Catolica del Peru",
@@ -2055,7 +2267,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 42.4,
+      "tilt": 64.4
     },
     {
       "university": "Universidade Federal do Rio de Janeiro (UFRJ)",
@@ -2074,7 +2288,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 44.6,
+      "tilt": 22.4
     },
     {
       "university": "Universidade Estadual Paulista (UNESP)",
@@ -2093,7 +2309,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 35.3,
+      "tilt": 14.6
     },
     {
       "university": "Pontificia Universidad Javeriana",
@@ -2112,7 +2330,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 41.1,
+      "tilt": 59.1
     },
     {
       "university": "Universidad de Concepcion",
@@ -2131,7 +2351,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 29.0,
+      "tilt": 21.7
     },
     {
       "university": "Universidad de Santiago de Chile (USACH)",
@@ -2149,7 +2371,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 33.8,
+      "tilt": 52.1
     },
     {
       "university": "Pontificia Universidade Catolica do Rio de Janeiro (PUC-Rio)",
@@ -2168,7 +2392,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 30.4,
+      "tilt": 8.9
     },
     {
       "university": "Universidade Federal de Minas Gerais (UFMG)",
@@ -2187,7 +2413,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 29.5,
+      "tilt": 5.1
     },
     {
       "university": "Universidade Federal do Rio Grande do Sul (UFRGS)",
@@ -2206,7 +2434,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 26.7,
+      "tilt": -6.5
     },
     {
       "university": "Universidade Federal de Sao Paulo (Unifesp)",
@@ -2224,7 +2454,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 23.6,
+      "tilt": -1.6
     },
     {
       "university": "Universidad Nacional de La Plata",
@@ -2243,7 +2475,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 35.0,
+      "tilt": 27.9
     },
     {
       "university": "Universidad Austral",
@@ -2262,7 +2496,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 32.3,
+      "tilt": 46.4
     },
     {
       "university": "Universidad Nacional Mayor de San Marcos",
@@ -2281,7 +2517,9 @@
         "phd"
       ],
       "verified": true,
-      "confidence": "low"
+      "confidence": "low",
+      "base_score": 19.9,
+      "tilt": 26.7
     }
   ]
 }
