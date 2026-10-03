@@ -3,14 +3,22 @@ graph, no live API. The full journey against the live graph is scripts/
 e2e_scripted.py (SC-001/SC-004), which burns quota and stays out of pytest.
 """
 
+import asyncio
+import json
+import threading
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessageChunk
+from langchain_core.runnables import RunnableLambda
 
+import app.fit as fit
 import app.server as server
+from app.fit import FitVerdict
 from app.model_layer import AllProvidersExhausted
+from app.requirements_search import SearchResult
 from app.shortlist import humanize_degree_text
 
 
@@ -36,6 +44,7 @@ class FakeGraph:
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(server, "_sessions", set())
+    monkeypatch.setattr(server, "_active_turns", {})
 
     def _make(graph):
         monkeypatch.setattr(server, "GRAPH", graph)
@@ -207,14 +216,163 @@ def test_parser_json_in_state_never_replays_to_the_page(client):
 
 
 def test_exhausted_providers_become_friendly_sse_error(client):
-    """AC 4: AllProvidersExhausted -> plain-language quota message, no trace."""
-    graph = FakeGraph(exc=AllProvidersExhausted("boom"))
+    """AC 4: AllProvidersExhausted -> typed JSON, no trace."""
+    graph = FakeGraph(exc=AllProvidersExhausted("boom", "quota"))
     response = _start(client(graph))
 
     assert response.status_code == 200
     assert "event: error" in response.text
-    assert server.QUOTA_MESSAGE in response.text
+    payload = response.text.split("data: ", 1)[1].strip()
+    assert json.loads(payload) == {"kind": "quota", "message": server.QUOTA_MESSAGE}
+    assert "\\u2014" in payload  # json.dumps escaping is preserved on the wire
     assert "Traceback" not in response.text and "boom" not in response.text
+
+
+@pytest.mark.parametrize("kind", server.ERROR_MESSAGES)
+def test_every_error_kind_keeps_its_wire_identity(client, kind):
+    response = _start(client(FakeGraph(exc=AllProvidersExhausted("private", kind))))
+    payload = json.loads(response.text.split("data: ", 1)[1])
+    assert payload == {"kind": kind, "message": server.ERROR_MESSAGES[kind]}
+
+
+def test_task_and_custom_statuses_are_ordered_and_not_message_text(client):
+    events = [
+        ("tasks", {"name": "shortlister"}),
+        ("custom", "searching requirements: Test U (1/2)"),
+        ("tasks", {"name": "fit", "result": {}}),  # completion is not a start
+        ("messages", (AIMessageChunk(content="answer", id="a", chunk_position="last"), {})),
+    ]
+    states = [
+        SimpleNamespace(values={"messages": []}, next=("shortlister",)),
+        SimpleNamespace(values={"messages": [],}, next=("fit",)),
+    ]
+    body = _start(client(FakeGraph(events, states))).text
+
+    first = "event: status\ndata: filtering universities…"
+    second = "event: status\ndata: searching requirements: Test U (1/2)"
+    assert body.index(first) < body.index(second) < body.index("event: token")
+    assert "comparing your profile" not in body
+    assert _token_text(body) == "answer"
+    assert "filtering universities" not in _token_text(body)
+
+
+def test_fit_emits_one_progress_status_per_program(monkeypatch):
+    statuses = []
+    monkeypatch.setattr(fit, "get_stream_writer", lambda: statuses.append)
+    monkeypatch.setattr(
+        fit,
+        "search_requirements",
+        lambda query: SearchResult(query=query, text="requirements", sources=["https://example.test"]),
+    )
+    monkeypatch.setattr(
+        fit,
+        "structured",
+        lambda schema, tier: RunnableLambda(
+            lambda _: FitVerdict(
+                label="strong",
+                reasons=["matches"],
+                sources=["https://example.test"],
+                sufficient=True,
+            )
+        ),
+    )
+    facts = SimpleNamespace(
+        degree="BSc", gpa="3.8", publications=[], english_test=None,
+        experience=[], experience_months=None,
+    )
+    entries = [
+        SimpleNamespace(university="One U", country="X", rank_context="rank 1", degree_type="phd"),
+        SimpleNamespace(university="Two U", country="Y", rank_context="rank 2", degree_type="phd"),
+    ]
+    state = SimpleNamespace(
+        cv_facts=facts, searches_used=0, shortlist=entries, field="CS", messages=[]
+    )
+
+    fit.fit_node(state)
+
+    assert statuses == [
+        "searching requirements: One U (1/2)",
+        "searching requirements: Two U (2/2)",
+    ]
+
+
+def test_active_session_stays_owned_until_producer_finishes(client):
+    web = client(FakeGraph())
+    assert _start(web).status_code == 200  # establish session cookie
+
+    started = threading.Event()
+    release = threading.Event()
+
+    class BlockingGraph(FakeGraph):
+        def __init__(self):
+            super().__init__()
+            self.invocations = 0
+
+        async def astream(self, payload, config, stream_mode):
+            self.invocations += 1
+            started.set()
+            while not release.is_set():
+                await asyncio.sleep(0.01)
+            if False:
+                yield None
+
+    graph = BlockingGraph()
+    server.GRAPH = graph
+    first = threading.Thread(target=lambda: web.post("/chat", json={"message": "first"}))
+    first.start()
+    assert started.wait(1)
+
+    rejected = web.post("/chat", json={"message": "retry"})
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == server.TURN_ACTIVE_MESSAGE
+    assert graph.invocations == 1
+
+    release.set()
+    first.join(2)
+    assert not first.is_alive()
+    assert web.post("/chat", json={"message": "retry"}).status_code == 200
+    assert graph.invocations == 2
+
+
+def test_closing_response_consumer_does_not_release_producer_ownership(monkeypatch):
+    async def scenario():
+        release = asyncio.Event()
+
+        class DisconnectGraph(FakeGraph):
+            async def astream(self, payload, config, stream_mode):
+                yield "custom", "started"
+                await release.wait()
+
+        monkeypatch.setattr(server, "GRAPH", DisconnectGraph())
+        monkeypatch.setattr(server, "_active_turns", {})
+        sid = "held-session"
+        config = {"configurable": {"thread_id": sid}}
+        consumer = server._queued_turn(sid, {}, config, 0)
+        assert await anext(consumer) == "event: status\ndata: started\n\n"
+        producer = server._active_turns[sid]
+
+        await consumer.aclose()  # equivalent to the response consumer disconnecting
+        assert server._active_turns[sid] is producer
+        assert not producer.done()
+
+        release.set()
+        await producer
+        assert sid not in server._active_turns
+
+    asyncio.run(scenario())
+
+
+def test_page_has_exact_silence_lifecycle_and_legacy_error_fallback():
+    page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+
+    assert "}, 75000);" in page
+    assert 'signal: controller.signal' in page and "controller.abort();" in page
+    assert '["token", "message", "status"].includes(event)' in page
+    assert 'event === "error"' in page and 'event === "done"' in page
+    assert 'state.timedOut && e.name === "AbortError"' in page
+    assert "generation !== streamGeneration" in page
+    assert 'let error = { kind: "unknown", message: text };' in page
+    assert "This turn is taking unusually long." in page
 
 
 def test_message_without_session_is_rejected(client):

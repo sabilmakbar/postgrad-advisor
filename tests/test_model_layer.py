@@ -7,6 +7,7 @@ Providers are mocked; no live API calls.
 
 import httpx
 import pytest
+from langchain_core.language_models.chat_models import SimpleChatModel
 from langchain_core.runnables import RunnableLambda
 
 import app.model_layer as model_layer
@@ -15,6 +16,7 @@ from app.model_layer import (
     AllProvidersExhausted,
     _build_models,
     _compose,
+    _AttemptStatus,
     chat,
     structured,
 )
@@ -37,6 +39,22 @@ class FakeRateLimit(Exception):
 
 class FakeAuthError(Exception):
     """Stands in for a provider's non-transient error (401)."""
+
+
+class ScriptedChat(SimpleChatModel):
+    responses: list[object]
+    calls: int = 0
+
+    @property
+    def _llm_type(self):
+        return "scripted"
+
+    def _call(self, messages, **kwargs):
+        response = self.responses[self.calls]
+        self.calls += 1
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def _failing(counter: dict, exc: Exception) -> RunnableLambda:
@@ -94,6 +112,95 @@ def test_all_providers_fail_raises_typed_error():
     # plain-language message, original error kept as cause
     assert "failed" in str(exc_info.value)
     assert exc_info.value.__cause__ is not None
+
+
+def test_exhaustion_kinds_discriminate_timeout_connection_and_quota(monkeypatch):
+    class RateLimited(Exception):
+        status_code = 429
+
+    cases = (
+        (httpx.ReadTimeout("slow"), "slow"),
+        (httpx.ConnectError("offline"), "offline"),
+        (RateLimited("quota"), "quota"),
+        (FakeAuthError("unknown"), "unknown"),
+    )
+    for error, expected in cases:
+        chain = _compose([(_failing({"calls": 0}, error), (type(error),))], FAST_BACKOFF)
+        with pytest.raises(AllProvidersExhausted) as exc_info:
+            chain.invoke("hi")
+        assert exc_info.value.kind == expected
+
+    mixed = _compose(
+        [
+            (_failing({"calls": 0}, RateLimited("primary")), (RateLimited,)),
+            (_failing({"calls": 0}, httpx.ConnectError("fallback")), (httpx.ConnectError,)),
+        ],
+        FAST_BACKOFF,
+    )
+    with pytest.raises(AllProvidersExhausted) as exc_info:
+        mixed.invoke("hi")
+    assert exc_info.value.kind == "quota"  # RunnableWithFallbacks raises first_error
+
+
+def test_build_failure_distinguishes_unconfigured_from_rejected_ids(monkeypatch):
+    for key in ("google_api_key", "groq_api_key", "cloudflare_api_token", "cloudflare_account_id"):
+        monkeypatch.setattr(settings, key, None)
+    with pytest.raises(AllProvidersExhausted) as exc_info:
+        _build_models()
+    assert exc_info.value.kind == "unconfigured"
+    assert ".env" in str(exc_info.value)
+
+    monkeypatch.setattr(settings, "google_api_key", "configured")
+    monkeypatch.setattr(model_layer, "_probe_status", lambda provider, model_id: 404)
+    with pytest.raises(AllProvidersExhausted) as exc_info:
+        _build_models()
+    assert exc_info.value.kind == "model_unavailable"
+    assert "smoke check" in str(exc_info.value)
+
+
+def test_attempt_callback_uses_retry_tags_without_retained_counts(monkeypatch):
+    statuses = []
+    monkeypatch.setattr(model_layer, "_emit_status", statuses.append)
+    primary = _AttemptStatus(0)
+    backup = _AttemptStatus(1)
+
+    primary.on_chat_model_start({}, [], tags=[])
+    primary.on_chat_model_start({}, [], tags=["retry:attempt:2"])
+    backup.on_chat_model_start({}, [], tags=[])
+    primary.on_chat_model_start({}, [], tags=[])
+
+    assert statuses == [
+        "model busy, retrying",
+        "model unavailable, trying the backup",
+    ]
+
+
+def test_composed_chain_emits_retry_then_fallback_and_keeps_result(monkeypatch):
+    monkeypatch.setattr(settings, "model_attempts", 2)
+    statuses = []
+    monkeypatch.setattr(model_layer, "get_stream_writer", lambda: statuses.append)
+    primary = ScriptedChat(responses=[httpx.ConnectError("one"), httpx.ConnectError("two")])
+    backup = ScriptedChat(responses=["ok"])
+
+    chain = _compose(
+        [(primary, (httpx.ConnectError,)), (backup, (httpx.ConnectError,))],
+        FAST_BACKOFF,
+    )
+
+    assert chain.invoke("hi").content == "ok"
+    assert statuses == [
+        "model busy, retrying",
+        "model unavailable, trying the backup",
+    ]
+
+    statuses.clear()
+    assert _compose([(ScriptedChat(responses=["clean"]), (httpx.ConnectError,))]).invoke("hi").content == "clean"
+    assert statuses == []
+
+
+def test_status_emit_is_best_effort_without_graph_writer(monkeypatch):
+    monkeypatch.setattr(model_layer, "get_stream_writer", lambda: (_ for _ in ()).throw(RuntimeError()))
+    model_layer._emit_status("model busy, retrying")
 
 
 def test_google_transient_predicate_matches_429_only():

@@ -14,12 +14,14 @@ import google.genai.errors as google_errors
 import groq
 import httpx
 import openai
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langgraph.constants import TAG_NOSTREAM
+from langgraph.config import get_stream_writer
 
 from app.config import settings
 
@@ -28,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 class AllProvidersExhausted(Exception):
     """Every provider in the chain failed after retries."""
+
+    def __init__(self, message: str, kind: str = "unknown"):
+        super().__init__(message)
+        self.kind = kind
 
 
 class _GoogleRateLimitMeta(type):
@@ -56,6 +62,48 @@ _OPENAI_TRANSIENT = (
     openai.InternalServerError,
     openai.APIConnectionError,
 )
+
+_TIMEOUT_ERRORS = (httpx.TimeoutException, groq.APITimeoutError, openai.APITimeoutError)
+_CONNECTION_ERRORS = (httpx.TransportError, groq.APIConnectionError, openai.APIConnectionError)
+_RATE_LIMIT_ERRORS = (_GoogleRateLimitError, groq.RateLimitError, openai.RateLimitError)
+
+
+def _error_kind(exc: BaseException) -> str:
+    if isinstance(exc, _TIMEOUT_ERRORS):
+        return "slow"
+    if isinstance(exc, _CONNECTION_ERRORS):
+        return "offline"
+    if isinstance(exc, _RATE_LIMIT_ERRORS) or getattr(exc, "status_code", None) == 429:
+        return "quota"
+    return "unknown"
+
+
+def _emit_status(text: str) -> None:
+    try:
+        get_stream_writer()(text)
+    except Exception:
+        pass
+
+
+class _AttemptStatus(BaseCallbackHandler):
+    """Report provider transitions without retaining state between runs."""
+
+    def __init__(self, provider_position: int):
+        self.provider_position = provider_position
+
+    def on_chat_model_start(self, serialized, messages, *, tags=None, **kwargs):
+        attempt = next(
+            (
+                int(tag.rsplit(":", 1)[1])
+                for tag in tags or ()
+                if tag.startswith("retry:attempt:")
+            ),
+            1,
+        )
+        if attempt > 1:
+            _emit_status("model busy, retrying")
+        elif self.provider_position > 0:
+            _emit_status("model unavailable, trying the backup")
 
 # Free-tier RPM quotas are PER MODEL: one shared limiter per (provider, model id),
 # so every chain built in this process draws from the same budget.
@@ -145,9 +193,11 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
     about and skipped (AC 2)."""
     light = tier == "light"
     models: list[_ProviderModel] = []
+    configured = False
     if settings.google_api_key:
         model_id = settings.gemini_light_model if light else settings.gemini_model
         rpm = (settings.gemini_light_rpm if light else None) or settings.gemini_rpm
+        configured |= bool(model_id)
         if model_id and _generation_ok("google", model_id):
             models.append(
                 (
@@ -169,6 +219,7 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
     if settings.groq_api_key:
         model_id = settings.groq_light_model if light else settings.groq_model
         rpm = (settings.groq_light_rpm if light else None) or settings.groq_rpm
+        configured |= bool(model_id)
         if model_id and _generation_ok("groq", model_id):
             models.append(
                 (
@@ -186,6 +237,7 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
         model_id = (
             settings.workers_ai_light_model if light else settings.workers_ai_model
         )
+        configured |= bool(model_id)
         if model_id and _generation_ok("workers_ai", model_id):
             models.append(
                 (
@@ -205,10 +257,16 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
     if not models:
         if light:
             return []
+        if configured:
+            raise AllProvidersExhausted(
+                "The configured model IDs are unavailable. Run the smoke check "
+                "and review its model-access results.",
+                "model_unavailable",
+            )
         raise AllProvidersExhausted(
-            "No model provider is usable. Set at least one API key in .env "
-            "(see .env.example); if keys are set, every configured model id "
-            "failed the generation probe (see warnings above)."
+            "No model provider is configured. Set an API key and enabled model "
+            "ID in .env (see .env.example).",
+            "unconfigured",
         )
     return models
 
@@ -222,12 +280,12 @@ def _compose(
     `jitter_params` exists so tests can shrink the backoff waits.
     """
     retried = [
-        m.with_retry(
+        m.with_config(callbacks=[_AttemptStatus(position)]).with_retry(
             retry_if_exception_type=transient,
             stop_after_attempt=settings.model_attempts,
             exponential_jitter_params=jitter_params,
         )
-        for m, transient in models
+        for position, (m, transient) in enumerate(models)
     ]
     chain = retried[0].with_fallbacks(retried[1:])
 
@@ -238,7 +296,8 @@ def _compose(
         except Exception as e:
             raise AllProvidersExhausted(
                 "All model providers failed after retries. Check the API keys in "
-                ".env and your network connection, then try again."
+                ".env and your network connection, then try again.",
+                _error_kind(e),
             ) from e
 
     return RunnableLambda(_invoke)
@@ -266,6 +325,7 @@ def _tier_chain(tier: str, prepare) -> Runnable:
         logger.warning(
             "light tier has no usable model ids; degrading to the heavy chain"
         )
+        _emit_status("light model unavailable, trying the full model")
         return heavy()
     light_chain = _compose(prepare(light_models))
 
@@ -274,6 +334,7 @@ def _tier_chain(tier: str, prepare) -> Runnable:
             return light_chain.invoke(value, config)
         except AllProvidersExhausted:
             logger.warning("light tier exhausted; degrading to the heavy chain")
+            _emit_status("light model unavailable, trying the full model")
             return heavy().invoke(value, config)
 
     return RunnableLambda(_invoke)

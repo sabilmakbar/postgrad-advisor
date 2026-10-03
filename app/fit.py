@@ -6,6 +6,7 @@ probabilities scrubbed in code, not just discouraged in the prompt (AD-4).
 
 import re
 
+from langgraph.config import get_stream_writer
 from pydantic import BaseModel, Field
 
 from app.model_layer import structured
@@ -170,7 +171,14 @@ def fit_node(state: InterviewState) -> dict:
     cv = {k: v for k, v in cv.items() if v is not None and v != []}
     used = min(max(state.searches_used, 0), MAX_SEARCHES)
     verdicts: list[ProgramFit] = []
-    for entry in state.shortlist:
+    total = len(state.shortlist)
+    for position, entry in enumerate(state.shortlist, 1):
+        try:
+            get_stream_writer()(
+                f"searching requirements: {entry.university} ({position}/{total})"
+            )
+        except Exception:
+            pass
         query = f"{entry.university} {state.field} admission requirements"
         if used >= MAX_SEARCHES:
             verdicts.append(

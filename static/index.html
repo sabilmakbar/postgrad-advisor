@@ -117,6 +117,9 @@
     transition: border-color .15s;
   }
   .retry:hover { border-color: var(--accent); }
+  .row.trace { color: var(--muted); font-size: .78rem; opacity: .72; }
+  .row.trace .bubble { padding: 0 .75rem; }
+  .turn-trace { display: block; color: var(--muted); font-size: .78rem; opacity: .72; }
 
   /* pending-turn placeholder: dots + a rotating line (global.css:60-81) --- */
   .ph { display: inline-flex; align-items: center; gap: .5rem; color: var(--muted); }
@@ -237,6 +240,7 @@ const chip = document.getElementById("chip");
 const chipName = document.getElementById("chipname");
 let over = false;
 let attachment = null;  // {path, name} held until the user's next Send (AC 1)
+let streamGeneration = 0;
 
 // AC 5, the one fixed line this page owns rather than app/prompts.py: after the
 // run is over the graph sits at END, so no graph turn exists to say this.
@@ -285,27 +289,14 @@ function addError(text, retryWith) {
   bubble.parentElement.append(btn);
 }
 
-// Rotating canned lines while the turn is pending. Story 010 replaces these
-// with real graph statuses: keep the .ph-line slot, drop the rotation, write
-// the status string into it — the discard path below stays unchanged.
-const PLACEHOLDERS = [
-  "thinking…",
-  "formulating the answer…",
-  "working through it…",
-  "putting the pieces together…",
-];
-
-// The pending bubble never renders empty (AC 2): dots + a line from the start.
 function openPlaceholder(bubble) {
   const ph = document.createElement("span");
   ph.className = "ph";
   ph.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="ph-line"></span>';
   const line = ph.querySelector(".ph-line");
-  let i = Math.floor(Math.random() * PLACEHOLDERS.length);
-  line.textContent = PLACEHOLDERS[i];
-  const rot = setInterval(() => { line.textContent = PLACEHOLDERS[++i % PLACEHOLDERS.length]; }, 2600);
+  line.textContent = "thinking…";
   bubble.append(ph);
-  return () => { clearInterval(rot); ph.remove(); };  // first token, or discard on error
+  return { line, drop: () => ph.remove() };
 }
 
 function setBusy(busy) {
@@ -325,17 +316,34 @@ function handleEvent(block, state) {
     else if (line.startsWith("data: ")) data.push(line.slice(6));
   }
   const text = data.join("\n");
+  if (["token", "message", "status"].includes(event)) state.touch();
   if (event === "token") state.queue += text;
   else if (event === "message")
     // typeFinals: paint it like a streamed reply. finish() then keeps the draft,
     // since nothing in finals replaces it and the bubble has text.
     if (state.typeFinals) state.queue += text;
     else state.finals.push(["ai", text]);
-  // Story 010 seam: the error event carries one flat string today. When it
-  // gains a `kind`, branch here for offline-vs-quota copy — no kinds are
-  // invented client-side until the contract carries them.
-  else if (event === "error") state.finals.push(["error", text]);
-  else if (event === "done" && text === "over") over = true;
+  else if (event === "status") {
+    if (state.status && state.status !== text) state.trace.push(state.status);
+    state.status = text;
+    state.traceEl.textContent = state.trace.join(" › ");
+    if (state.statusLine) state.statusLine.textContent = text;
+  } else if (event === "error") {
+    state.terminal();
+    let error = { kind: "unknown", message: text };
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.message === "string") error = parsed;
+    } catch (_) { /* legacy plain-text payload */ }
+    state.errorKind = error.kind || "unknown";
+    state.finals.push(["error", error.message]);
+  } else if (event === "done") {
+    state.terminal();
+    if (state.status) state.trace.push(state.status);
+    state.traceEl.textContent = state.trace.join(" › ");
+    state.status = "";
+    if (text === "over") over = true;
+  }
 }
 
 // Streamed tokens paint from a queue at a readable pace, not per network
@@ -359,14 +367,21 @@ function startPainter(state) {
 }
 
 function finish(state) {
+  if (state.finished) return;
+  state.finished = true;
   clearInterval(state.painter);
+  state.terminal?.();
   if (state.dropPh) { state.dropPh(); state.dropPh = null; }
+  if (state.finals.some(([role]) => role === "error")) state.trace = [];
+  if (!state.trace.length) state.traceEl.remove();
   // Replace the painted draft with the authoritative messages; keep it when
   // nothing replaces it (mid-stream error: painted prose + error line stay).
   // Placeholder text never counts here, so an error before the first token
   // discards the whole draft bubble (AC 2).
   if (state.finals.some(([role]) => role === "ai") || !state.body.textContent)
     state.draft.remove();
+  if (state.trace.length && state.finals.some(([role]) => role === "ai"))
+    add("trace", state.trace.join(" › "));
   for (const [role, text] of state.finals) {
     if (role === "error") addError(text, state.sent);
     else add(role, text);
@@ -390,38 +405,76 @@ const OFFLINE = [
 // is now fixed text: after a typed greeting, the first question appearing
 // fully-formed reads as UI chrome rather than the agent speaking.
 async function send(message, shown, typeFinals) {
+  const generation = ++streamGeneration;
   setBusy(true);
   if (message) add("user", shown || message);
   const draft = add("ai", "");
+  const placeholder = openPlaceholder(draft);
+  const traceEl = document.createElement("span");
+  traceEl.className = "turn-trace";
+  let silenceTimer;
+  const controller = new AbortController();
   const state = {
     draft: draft.parentElement, body: document.createElement("span"),
-    dropPh: openPlaceholder(draft), queue: "", finals: [], closed: false,
+    dropPh: placeholder.drop, statusLine: placeholder.line,
+    queue: "", finals: [], closed: false, finished: false,
+    trace: [], traceEl, status: "", errorKind: "unknown",
     typeFinals,
     sent: [message, shown],  // this turn's send, for a retry button on its error
   };
-  draft.append(state.body);
+  state.terminal = () => clearTimeout(silenceTimer);
+  state.touch = () => {
+    clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(() => {
+      if (generation !== streamGeneration || state.closed) return;
+      state.timedOut = true;
+      controller.abort();
+      state.queue = "";
+      state.trace = [];
+      state.traceEl.remove();
+      state.status = "";
+      if (state.dropPh) { state.dropPh(); state.dropPh = null; }
+      state.finals.push(["error", "This turn is taking unusually long. Please try again shortly."]);
+      state.closed = true;
+    }, 75000);
+  };
+  draft.append(traceEl, state.body);
   state.painter = startPainter(state);
   try {
+    state.touch();
     const res = await fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
+      signal: controller.signal,
     });
+    if (!res.ok) {
+      const failure = await res.json();
+      state.queue = "";
+      state.finals.push(["error", failure.detail || "request failed"]);
+      state.closed = true;
+      state.terminal();
+      return;
+    }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      if (generation !== streamGeneration) break;
       buf += decoder.decode(value, { stream: true });
       const blocks = buf.split("\n\n");
       buf = blocks.pop();  // last piece may be incomplete
       blocks.forEach((b) => handleEvent(b, state));
     }
   } catch (e) {
-    state.queue = "";  // connection lost: show the error now, not after a drain
-    state.finals.push(["error", OFFLINE[Math.floor(Math.random() * OFFLINE.length)]]);
+    if (!(state.timedOut && e.name === "AbortError")) {
+      state.queue = "";  // connection lost: show the error now, not after a drain
+      state.finals.push(["error", OFFLINE[Math.floor(Math.random() * OFFLINE.length)]]);
+    }
   }
+  state.terminal();
   state.closed = true;  // painter drains the queue, then finish() runs
 }
 
