@@ -21,7 +21,19 @@ import app.shortlist as shortlist_mod
 from app.dataset import ProgramDataset, University, load_dataset
 from app.graph import build_graph
 from app.prompts import CV_REQUEST
-from app.shortlist import MAX_SIZE, MIN_SIZE, Pick, Picks, prefilter, shortlist_node
+from app.shortlist import (
+    FIELD_ALIASES,
+    FIELD_BUCKETS,
+    MAX_SIZE,
+    MIN_SIZE,
+    Pick,
+    Picks,
+    _field_match,
+    _render,
+    humanize_degree_text,
+    prefilter,
+    shortlist_node,
+)
 from app.state import InterviewState, SlotUpdate
 
 
@@ -123,6 +135,83 @@ def test_entries_map_indices_to_dataset_rows(monkeypatch):
         assert e.university in rendered
         assert e.why_it_fits in rendered
     assert first.rank_context in rendered and first.country in rendered
+    assert "; PhD." in rendered
+    assert "masters_course" not in rendered and "masters_research" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("degree_type", "label"),
+    [
+        ("masters_course", "taught master's"),
+        ("masters_research", "research master's"),
+        ("phd", "PhD"),
+    ],
+)
+def test_degree_labels_replace_canonical_tokens_at_render_boundary(
+    degree_type, label
+):
+    entry = shortlist_mod.ShortlistEntry(
+        university="Test University",
+        country="Testland",
+        rank_context="QS world rank 1",
+        degree_type=degree_type,
+        why_it_fits="fixture",
+    )
+    rendered = _render([entry], [])
+    assert f"; {label}." in rendered
+    assert f"; {degree_type}." not in rendered
+
+
+@pytest.mark.parametrize(
+    ("token", "label"),
+    [
+        ("masters_coursework", "taught master's"),
+        ("masters_course", "taught master's"),
+        ("masters_research", "research master's"),
+        ("phd", "PhD"),
+    ],
+)
+def test_generated_degree_tokens_are_humanized(token, label):
+    assert humanize_degree_text(f"Matches your {token} goal") == (
+        f"Matches your {label} goal"
+    )
+
+
+def test_canonical_degree_token_never_enters_heavy_shortlist_prompt_or_reply(
+    monkeypatch,
+):
+    state = _state(degree_intent="masters_research")
+    candidates, _ = prefilter(state, DATASET)
+    calls = []
+
+    def fake_structured(schema, tier="heavy"):
+        assert schema is Picks and tier == "heavy"
+
+        def answer(msgs):
+            calls.append(msgs)
+            return Picks(
+                picks=[
+                    Pick(
+                        index=i,
+                        university=candidates[i].university,
+                        why_it_fits="Matches your masters_research goal",
+                    )
+                    for i in range(8)
+                ]
+            )
+
+        return RunnableLambda(answer)
+
+    monkeypatch.setattr(shortlist_mod, "structured", fake_structured)
+    out = shortlist_node(state)
+
+    prompt = "\n".join(text for _, text in calls[0])
+    rendered = out["messages"][-1][1]
+    assert "masters_research" not in prompt
+    assert "masters_coursework" not in prompt
+    assert "degree: phd" not in prompt
+    assert "masters_research" not in rendered
+    assert "Matches your research master's goal" in rendered
 
 
 def test_doctored_response_is_dropped_by_index_mapping(monkeypatch):
@@ -210,7 +299,7 @@ def test_widening_relaxes_field_first(monkeypatch):
     assert len(candidates) == 9
     assert all(u.continent == "Europe" for u in candidates)
     assert notes == [
-        "widened to nearby fields because only 3 matched your field in your target regions"
+        "the field was widened to related subjects because 3 matched in your target regions"
     ]
 
 
@@ -220,7 +309,7 @@ def test_widening_relaxes_region_after_field(monkeypatch):
     candidates, notes = prefilter(_state(target_regions=["Oceania"]), SPARSE)
     assert len(candidates) == len(SPARSE)  # full degree pool
     assert notes == [
-        "widened to nearby fields because only 1 matched your field in your target regions",
+        "the field was widened to related subjects because 1 matched in your target regions",
         # QA finding 2: the count is the post-region-widening total.
         f"widened to nearby regions because too few matched in your target "
         f"regions; {len(SPARSE)} candidates after widening",
@@ -241,7 +330,7 @@ def test_widening_is_stated_in_rendered_output(monkeypatch):
 
     out = shortlist_node(state)
     rendered = out["messages"][-1][1]
-    assert "widened to nearby fields because only 3 matched" in rendered
+    assert "the field was widened to related subjects because 3 matched" in rendered
     assert {e.university for e in out["shortlist"]} <= {u.university for u in SPARSE}
 
 
@@ -303,6 +392,48 @@ def test_thin_pool_no_retry_no_notice(monkeypatch):
     assert len(out["shortlist"]) == 5
     assert "could be grounded against the dataset" not in rendered
     assert "widened to nearby regions" in rendered
+
+
+def test_field_aliases_resolve_before_matching():
+    ai, ai_notes = prefilter(_state(field="AI", target_regions=["Asia"]), DATASET)
+    ml, ml_notes = prefilter(
+        _state(field="machine learning", target_regions=["Asia"]), DATASET
+    )
+    assert len(ai) == len(ml) == 9
+    assert ai_notes == ml_notes == []
+    assert all("computer_science" in u.fields for u in ai)
+
+
+def test_alias_values_are_dataset_buckets_and_keys_are_not_substrings():
+    assert set(FIELD_ALIASES.values()) <= FIELD_BUCKETS
+    cs = _uni("CS-only", "Japan", "Asia", 1, ["computer_science"])
+    assert not _field_match("maintenance engineering", cs)
+    assert not _field_match("air quality engineering", cs)
+
+
+def test_widening_distinguishes_unresolved_absent_and_few():
+    _, unresolved = prefilter(
+        _state(field="basket weaving", target_regions=["Europe"]), DATASET
+    )
+    _, absent = prefilter(_state(field="AI", target_regions=["Africa"]), DATASET)
+    _, few = prefilter(
+        _state(field="computer science", target_regions=["Europe"]), SPARSE
+    )
+
+    assert "nothing in the dataset is classified" in unresolved[0]
+    assert "rather than field fit" in unresolved[0]
+    assert "exists in the dataset but not in your target regions" in absent[0]
+    assert "because 3 matched" in few[0]
+    assert all(
+        "only 0" not in note
+        for notes in (unresolved, absent, few)
+        for note in notes
+    )
+
+
+def test_canonical_fallback_counts_as_resolved():
+    _, notes = prefilter(_state(field="science", target_regions=["Africa"]), DATASET)
+    assert all("nothing in the dataset is classified" not in note for note in notes)
 
 
 def test_graph_wiring_interview_complete_to_shortlist(monkeypatch):

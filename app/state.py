@@ -58,6 +58,7 @@ class InterviewState(BaseModel):
     field, and at least one target region are captured."""
 
     degree_intent: DegreeIntent | None = None
+    degree_intent_blocked: bool = False  # story 012: reject one unsupported parse
     field: str | None = None
     focus_area: str | None = None
     target_regions: list[str] = []

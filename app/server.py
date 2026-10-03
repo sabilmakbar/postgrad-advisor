@@ -10,6 +10,7 @@ Run: ``uv run uvicorn app.server:app``.
 
 import json
 import logging
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -21,6 +22,7 @@ from langgraph.types import Command
 from app.config import CV_DIR, ROOT
 from app.graph import build_graph
 from app.model_layer import AllProvidersExhausted
+from app.shortlist import CANONICAL_DEGREE_TOKENS, humanize_degree_text
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,45 @@ def _internal_json(text: str) -> bool:
         return False
 
 
+class _DegreeTokenStream:
+    """Humanize canonical degree tokens without exposing split prefixes."""
+
+    def __init__(self):
+        self.pending = ""
+        self.left_word = False
+
+    def _clean(self, text: str) -> str:
+        prefix = "x" if self.left_word else ""
+        cleaned = humanize_degree_text(prefix + text)[len(prefix) :]
+        if text:
+            self.left_word = bool(re.match(r"\w", text[-1]))
+        return cleaned
+
+    def feed(self, text: str) -> str:
+        self.pending += text
+        lower = self.pending.lower()
+        hold = len(self.pending)
+        start_at = max(0, len(self.pending) - len(CANONICAL_DEGREE_TOKENS[0]))
+        for start in range(start_at, len(self.pending)):
+            left_word = (
+                self.left_word
+                if start == 0
+                else bool(re.match(r"\w", self.pending[start - 1]))
+            )
+            if left_word:
+                continue
+            suffix = lower[start:]
+            if any(token.startswith(suffix) for token in CANONICAL_DEGREE_TOKENS):
+                hold = start
+                break
+        ready, self.pending = self.pending[:hold], self.pending[hold:]
+        return self._clean(ready)
+
+    def finish(self) -> str:
+        ready, self.pending = self.pending, ""
+        return self._clean(ready)
+
+
 async def _turn(payload, config: dict, seen: int):
     """SSE events for one graph turn: live tokens while the heavy chat
     generates (AC 2), then the authoritative new messages — code-rendered
@@ -66,24 +107,62 @@ async def _turn(payload, config: dict, seen: int):
     internal-schema JSON (``_internal_json``).
     """
     interrupts: list[str] = []
+    degree_streams: dict[str, _DegreeTokenStream] = {}
+    active_message: str | None = None
+
+    def flush(message_id: str | None = None) -> list[str]:
+        ids = [message_id] if message_id is not None else list(degree_streams)
+        tails = []
+        for stream_id in ids:
+            if stream := degree_streams.pop(stream_id, None):
+                if tail := stream.finish():
+                    tails.append(tail)
+        return tails
+
     try:
         async for mode, data in GRAPH.astream(
             payload, config, stream_mode=["messages", "updates"]
         ):
             if mode == "messages":
                 chunk, meta = data
-                if (
-                    isinstance(chunk, AIMessageChunk)
-                    and chunk.text
-                    and "ls_structured_output_format" not in meta
-                ):
-                    yield _sse("token", chunk.text)
-            elif "__interrupt__" in data:
-                interrupts += [i.value for i in data["__interrupt__"]]
+                if not isinstance(chunk, AIMessageChunk):
+                    continue
+                message_id = chunk.id
+                if active_message is not None and message_id != active_message:
+                    for tail in flush(active_message):
+                        yield _sse("token", tail)
+                active_message = message_id
+                if chunk.text and "ls_structured_output_format" not in meta:
+                    # LangGraph's v1 messages stream preserves the model-run
+                    # chunk id. Missing ids are isolated rather than shared.
+                    stream = degree_streams.setdefault(
+                        message_id or f"chunk-{id(chunk)}", _DegreeTokenStream()
+                    )
+                    text = stream.feed(chunk.text)
+                    if text:
+                        yield _sse("token", text)
+                    if chunk.chunk_position == "last":
+                        for tail in flush(message_id or f"chunk-{id(chunk)}"):
+                            yield _sse("token", tail)
+                        active_message = None
+                elif chunk.chunk_position == "last":
+                    active_message = None
+            elif mode == "updates":
+                for tail in flush():
+                    yield _sse("token", tail)
+                active_message = None
+                if "__interrupt__" in data:
+                    interrupts += [i.value for i in data["__interrupt__"]]
+        for tail in flush():
+            yield _sse("token", tail)
     except AllProvidersExhausted:
+        for tail in flush():
+            yield _sse("token", tail)
         yield _sse("error", QUOTA_MESSAGE)
         return
     except Exception:  # AC 4: the page never sees a stack trace
+        for tail in flush():
+            yield _sse("token", tail)
         logger.exception("graph turn failed")
         yield _sse("error", "Something went wrong on the server — check its logs.")
         return

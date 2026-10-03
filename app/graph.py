@@ -9,6 +9,8 @@ light tier, then ask the next question on the heavy tier. Drive it with
 ``graph.invoke(Command(resume=<answer>), config)`` per user answer.
 """
 
+import re
+
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
@@ -27,7 +29,7 @@ from app.prompts import (
     POSTDOC_DECLINE,
     TURN_CAP_MESSAGE,
 )
-from app.shortlist import shortlist_node
+from app.shortlist import degree_intent_label, humanize_degree_text, shortlist_node
 from app.state import CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate
 
 MAX_TURNS = 10  # AC 2: cap enforced here, not in the prompt
@@ -42,6 +44,30 @@ CHECKPOINT_TYPES = (CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpd
 _SERDE = JsonPlusSerializer(allowed_msgpack_modules=list(CHECKPOINT_TYPES))
 
 _REQUIRED_SLOTS = ("degree_intent", "field", "target_regions")
+
+_DEGREE_TERMS = {
+    "taught",
+    "coursework",
+    "course based",
+    "research",
+    "thesis",
+    "dissertation",
+    "phd",
+    "doctoral",
+    "doctorate",
+    "doctor of philosophy",
+    "dphil",
+    "mres",
+    "mphil",
+    "mba",
+}
+
+
+def _has_degree_term(answer: str) -> bool:
+    text = re.sub(r"\bph\s*[.-]?\s*d\b", "phd", answer.lower())
+    normalised = " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
+    padded = f" {normalised} "
+    return any(f" {term} " in padded for term in _DEGREE_TERMS)
 
 
 def _next_open_slot(state: InterviewState) -> str | None:
@@ -95,13 +121,24 @@ def _interviewer(state: InterviewState) -> dict:
             ("human", f"Question asked: {question}\nAnswer: {answer}"),
         ]
     )
+    if (
+        parsed.degree_intent
+        and not state.degree_intent
+        and not state.degree_intent_blocked
+        and not _has_degree_term(answer)
+    ):
+        parsed = parsed.model_copy(update={"degree_intent": None})
+        updates["degree_intent_blocked"] = True
+    captured: dict[str, object] = {}
     for name in ("degree_intent", "field", "focus_area"):
         if getattr(parsed, name):
             updates[name] = getattr(parsed, name)
+            captured[name] = getattr(parsed, name)
     for name in ("target_regions", "constraints"):
         new = [v for v in getattr(parsed, name) if v not in getattr(state, name)]
         if new:
             updates[name] = getattr(state, name) + new
+            captured[name] = new
     if parsed.postdoc_interest:  # FR-002: decline is code-enforced, not prompt hope
         decline = POSTDOC_DECLINE + "\n\n"
 
@@ -127,13 +164,22 @@ def _interviewer(state: InterviewState) -> dict:
         for k, v in merged.model_dump(include=set(SlotUpdate.model_fields) - {"postdoc_interest"}).items()
         if v
     }
+    if "degree_intent" in known:
+        known["degree_intent"] = degree_intent_label(known["degree_intent"])
+    if "degree_intent" in captured:
+        captured["degree_intent"] = degree_intent_label(captured["degree_intent"])
     context = f"Captured so far: {known or 'nothing yet'}. Slot to fill next: {_next_open_slot(merged)}."
+    if captured:
+        context += (
+            f" Just captured this turn: {captured}. Treat this as an "
+            "interpretation the user can correct."
+        )
     reply = chat(tier="heavy").invoke(
         [("system", f"{PERSONA}\n\n{INTERVIEWER_INSTRUCTIONS}"), *messages, ("system", context)]
     )
     # .text, not .content: under the web chat's stream_mode="messages" the model
     # streams internally and the aggregated content can be a block list (story 006)
-    messages.append(("ai", decline + reply.text))
+    messages.append(("ai", decline + humanize_degree_text(reply.text)))
     return {**updates, "messages": messages, "turns": state.turns + 1}
 
 

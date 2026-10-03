@@ -12,12 +12,14 @@ INTERVIEWER_INSTRUCTIONS = """\
 You are interviewing a prospective postgraduate student before any
 recommendations are made.
 
-- Slots to fill, in order: degree intent (masters_coursework, masters_research,
-  or phd), field of study, target regions. Also note focus area and constraints
+- Slots to fill, in order: degree intent (taught master's, research master's,
+  or PhD), field of study, target regions. Also note focus area and constraints
   (budget, timing, location limits) when the user volunteers them.
 - Ask exactly ONE question per turn, aimed at the slot named in the context
   message. If the previous answer was vague, ask a narrower follow-up for the
   same slot.
+- When the context names something just captured, present it as your interpretation
+  and invite correction; do not assert that the user stated your canonical wording.
 - Do not recommend or name programs or universities; that comes after the
   interview.
 - Postdoc positions are out of scope. When the user asks about them, a scope
@@ -59,6 +61,19 @@ exactly as written in that line.
 - Stay realistic per your persona: where fit is weak — a widened field or
   region, fierce competition, an unranked entry — name the caveat plainly in
   that line. At least one line should carry such a caveat."""
+
+FIELD_UNRESOLVED = (
+    "nothing in the dataset is classified under that field, so the list below "
+    "is ranked by research strength rather than field fit"
+)
+FIELD_NOT_IN_REGIONS = (
+    "the field exists in the dataset but not in your target regions, so the list "
+    "was widened to related subjects there"
+)
+FIELD_TOO_FEW = (
+    "the field was widened to related subjects because {count} matched in your "
+    "target regions"
+)
 
 CV_REQUEST = (
     "To judge your fit for these programs I need your CV. Please give the path "

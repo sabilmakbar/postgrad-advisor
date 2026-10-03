@@ -85,7 +85,7 @@ def test_interview_fills_state_and_hands_off(monkeypatch):
     # 004's shortlister (the node completion routes to) is stubbed out here;
     # tests/test_shortlist.py covers it.
     monkeypatch.setattr(graph_mod, "shortlist_node", lambda s: {"handed_off": True})
-    tiers, _ = _wire(
+    tiers, ask_calls = _wire(
         monkeypatch,
         # Turn 0 is fixed text, and the 4th answer completes the slots so no
         # question follows it: 3 generated questions, not 4.
@@ -114,9 +114,130 @@ def test_interview_fills_state_and_hands_off(monkeypatch):
     assert typed.target_regions == ["Europe", "UK"]
     assert typed.constraints == ["needs funding"]
     assert typed.turns == 4 and typed.turns <= 10
+    assert "Just captured this turn: {'degree_intent': 'PhD'}" in ask_calls[0][-1][1]
+    assert "masters_coursework" not in ask_calls[0][-1][1]
+    assert "masters_research" not in ask_calls[0][-1][1]
+    assert "Just captured this turn" not in ask_calls[1][-1][1]
+    assert "'field': 'machine learning'" in ask_calls[2][-1][1]
+    assert "'focus_area': 'NLP'" in ask_calls[2][-1][1]
+    marker = ask_calls[2][-1][1].split("Just captured this turn:", 1)[1]
+    assert "target_regions" not in marker
     # AD-7: explicit tiers — heavy for user-facing prose, light for slot parsing
     assert set(tiers["ask"]) == {"heavy"}
     assert set(tiers["parse"]) == {"light"}
+
+
+def test_bare_degree_is_rejected_once_then_accepted(monkeypatch):
+    tiers, ask_calls = _wire(
+        monkeypatch,
+        questions=["Q-clarify-degree", "Q-field"],
+        parses=[
+            SlotUpdate(degree_intent="masters_research"),
+            SlotUpdate(degree_intent="masters_research"),
+        ],
+    )
+    g = build_graph()
+    state = g.invoke({}, _thread())
+    state = g.invoke(Command(resume="MSc"), _thread())
+    assert state.get("degree_intent") is None
+    assert state["degree_intent_blocked"] is True
+    assert state["messages"][-1] == ("ai", "Q-clarify-degree")
+
+    state = g.invoke(Command(resume="MSc"), _thread())
+    assert state["degree_intent"] == "masters_research"
+    assert state["messages"][-1] == ("ai", "Q-field")
+    assert len(ask_calls) == 2
+    assert tiers["parse"] == ["light", "light"]
+
+
+@pytest.mark.parametrize(
+    ("answer", "intent"),
+    [
+        ("a research master's", "masters_research"),
+        ("I want a PhD", "phd"),
+        ("Ph.D.", "phd"),
+        ("a taught programme", "masters_coursework"),
+        ("MBA", "masters_coursework"),
+    ],
+)
+def test_discriminating_degree_terms_fill_slot(monkeypatch, answer, intent):
+    _wire(
+        monkeypatch,
+        questions=["Q-field"],
+        parses=[SlotUpdate(degree_intent=intent)],
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    state = g.invoke(Command(resume=answer), _thread())
+    assert state["degree_intent"] == intent
+    assert not state.get("degree_intent_blocked")
+
+
+def test_canonical_degree_token_never_enters_heavy_interviewer_prompt(monkeypatch):
+    heavy_calls = []
+
+    monkeypatch.setattr(
+        graph_mod,
+        "structured",
+        lambda schema, tier="light": RunnableLambda(
+            lambda _: SlotUpdate(degree_intent="masters_research")
+        ),
+    )
+
+    def fake_chat(tier="heavy"):
+        assert tier == "heavy"
+
+        def answer(msgs):
+            heavy_calls.append(msgs)
+            return AIMessage(
+                content="research master's. Matches your masters_research goal"
+            )
+
+        return RunnableLambda(answer)
+
+    monkeypatch.setattr(graph_mod, "chat", fake_chat)
+    g = build_graph()
+    g.invoke({}, _thread())
+    state = g.invoke(Command(resume="a research master's"), _thread())
+
+    assert state["degree_intent"] == "masters_research"  # canonical state survives
+    prompt = "\n".join(text for _, text in heavy_calls[0])
+    assert "masters_research" not in prompt
+    assert "masters_coursework" not in prompt
+    assert " or phd)" not in prompt
+    assert "masters_research" not in state["messages"][-1][1]
+    assert "Matches your research master's goal" in state["messages"][-1][1]
+
+
+def test_user_authored_canonical_degree_literal_is_preserved(monkeypatch):
+    heavy_calls = []
+    monkeypatch.setattr(
+        graph_mod,
+        "structured",
+        lambda schema, tier="light": RunnableLambda(
+            lambda _: SlotUpdate(degree_intent="masters_research")
+        ),
+    )
+
+    def fake_chat(tier="heavy"):
+        assert tier == "heavy"
+
+        def answer(msgs):
+            heavy_calls.append(msgs)
+            return AIMessage(content="Which field interests you?")
+
+        return RunnableLambda(answer)
+
+    monkeypatch.setattr(graph_mod, "chat", fake_chat)
+    literal = "I literally wrote masters_research"
+    g = build_graph()
+    g.invoke({}, _thread())
+    state = g.invoke(Command(resume=literal), _thread())
+
+    assert ("human", literal) in state["messages"]
+    containing = [(role, text) for role, text in heavy_calls[0] if "masters_research" in text]
+    assert containing == [("human", literal)]
+    assert "masters_research" not in state["messages"][-1][1]
 
 
 def test_postdoc_answer_gets_scope_decline(monkeypatch):

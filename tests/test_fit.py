@@ -143,13 +143,37 @@ def test_verdict_schema_sources_and_tier(monkeypatch):
     # invented URL replaced by the real fetched source (zero-results
     # counterpart: the valid URL above survived exactly as given)
     assert v1.label == "reach" and v1.sources == [_url("Uni-1")]
-    assert out["searches_used"] == 2 and queries[0].startswith("Uni-0 phd")
+    assert out["searches_used"] == 2
+    assert queries[0] == "Uni-0 computer science admission requirements"
+    assert all("phd" not in query and "masters_" not in query for query in queries)
+    prompt = judge_calls[0][-1][1]
+    assert "; PhD." in prompt
+    assert "masters_course" not in prompt and "masters_research" not in prompt
 
     rendered = out["messages"][-1][1]
     for v in (v0, v1):
         assert v.university in rendered and v.label in rendered
         assert v.reasons[0] in rendered and v.sources[0] in rendered
     assert not _PROB_RE.search(rendered)  # AC 5 scan on the full output
+
+
+def test_canonical_degree_token_never_enters_heavy_fit_prompt_or_reply(monkeypatch):
+    bad = FitVerdict(
+        label="borderline",
+        reasons=["Matches your masters_research goal"],
+        sources=[_url("Uni-0")],
+    )
+    queries, judge_calls, _ = _wire(monkeypatch, [bad])
+    out = fit_node(_state(1))
+
+    prompt = "\n".join(text for _, text in judge_calls[0])
+    rendered = out["messages"][-1][1]
+    assert "masters_research" not in prompt
+    assert "masters_coursework" not in prompt
+    assert "masters_research" not in out["fit_verdicts"][0].reasons[0]
+    assert "masters_research" not in rendered
+    assert "Matches your research master's goal" in rendered
+    assert queries == ["Uni-0 computer science admission requirements"]
 
 
 # --- unknown paths (AC 4) ----------------------------------------------------

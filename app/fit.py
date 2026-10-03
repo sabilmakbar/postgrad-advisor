@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from app.model_layer import structured
 from app.prompts import FIT_INSTRUCTIONS, PERSONA
 from app.requirements_search import search_requirements
+from app.shortlist import degree_label, humanize_degree_text
 from app.state import FitLabel, InterviewState, ProgramFit
 
 MAX_SEARCHES = 12  # AD-3: per-conversation runtime-search cap, enforced here
@@ -66,7 +67,7 @@ def _ground(university: str, judged: FitVerdict, found) -> ProgramFit:
     return ProgramFit(
         university=university,
         label=judged.label,
-        reasons=_scrub(judged.reasons),
+        reasons=_scrub([humanize_degree_text(reason) for reason in judged.reasons]),
         sources=sources,
     )
 
@@ -74,7 +75,8 @@ def _ground(university: str, judged: FitVerdict, found) -> ProgramFit:
 def _render(verdicts: list[ProgramFit]) -> str:
     lines = []
     for v in verdicts:
-        line = f"- {v.university}: {v.label} — {'; '.join(v.reasons)}"
+        reasons = "; ".join(humanize_degree_text(reason) for reason in v.reasons)
+        line = f"- {v.university}: {v.label} — {reasons}"
         if v.sources:
             line += f" (sources: {', '.join(v.sources)})"
         lines.append(line)
@@ -92,7 +94,7 @@ def fit_node(state: InterviewState) -> dict:
     used = state.searches_used
     verdicts: list[ProgramFit] = []
     for entry in state.shortlist:
-        query = f"{entry.university} {entry.degree_type} {state.field} admission requirements"
+        query = f"{entry.university} {state.field} admission requirements"
         if used >= MAX_SEARCHES:
             verdicts.append(
                 _unknown(
@@ -116,7 +118,7 @@ def fit_node(state: InterviewState) -> dict:
                     "human",
                     f"CV facts (user-confirmed): {cv}\n\n"
                     f"Program: {entry.university}, {entry.country} — "
-                    f"{entry.rank_context}; {entry.degree_type}.\n\n"
+                    f"{entry.rank_context}; {degree_label(entry.degree_type)}.\n\n"
                     f"Fetched requirements:\n{found.text}\n\n"
                     f"Source URLs: {found.sources}",
                 ),
