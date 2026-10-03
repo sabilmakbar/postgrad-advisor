@@ -6,10 +6,9 @@ the cycle-1 exit check:
     uv run python scripts/e2e_scripted.py               # SC-001 (all keys)
     uv run python scripts/e2e_scripted.py --no-gemini   # SC-004 (Gemini unset)
 
-Each run spawns its own server (--no-gemini overrides GOOGLE_API_KEY with an
-empty value — deleting the env var would not mask the .env file entry), runs
-interview -> shortlist -> CV upload -> verdicts, and asserts the SC-001
-checks plus the SC-005 probability scan on everything the agent said.
+Each run spawns its own server with a fresh Story 015 trace. Use ``--stop`` to
+exercise only the selected boundary; every focused stop asserts from that
+isolated trace that later graph/search work did not run.
 """
 
 import argparse
@@ -18,6 +17,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -49,6 +49,28 @@ CONFIRM = "Yes, that's all correct."
 VAGUE = "Hmm, honestly I'm not sure yet — something after my bachelor's, I guess?"
 
 TOKEN_COUNTS: list[int] = []  # token events per turn, for the AC-2 streaming check
+STOPS = ("pre-final", "shortlist", "cv-echo", "first-fit-batch")
+
+
+def trace_events(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def assert_boundary(path: Path, stop: str) -> None:
+    events = trace_events(path)
+    starts = [e["node"] for e in events if e.get("event") == "graph_node" and e.get("phase") == "start"]
+    searches = sum(e.get("event") == "requirements_search" for e in events)
+    forbidden = {
+        "pre-final": {"shortlister", "cv_ask", "cv_intake", "cv_confirm", "fit_batch"},
+        "shortlist": {"cv_confirm", "fit_batch"},
+        "cv-echo": {"fit_batch"},
+    }
+    if stop in forbidden:
+        assert forbidden[stop].isdisjoint(starts), f"later nodes ran: {forbidden[stop] & set(starts)}"
+        assert searches == 0, f"later requirements searches ran: {searches}"
+    else:
+        assert starts.count("fit_batch") == 1, "more than the selected first fit batch ran"
+        assert searches > 0, "first fit batch recorded no requirements search"
 
 
 def bare_json(text: str) -> bool:
@@ -92,7 +114,7 @@ def turn(client: httpx.Client, message: str) -> list[str]:
     return messages
 
 
-def run_conversation(client: httpx.Client) -> None:
+def run_conversation(client: httpx.Client, stop: str | None, trace_path: Path) -> None:
     said: list[str] = []  # everything the agent said, for the SC-005 scan
 
     print("interview:")
@@ -110,7 +132,11 @@ def run_conversation(client: httpx.Client) -> None:
 
     shortlist = None
     agent_turns = 2  # opening question + the vague-answer follow-up
-    for answer in ANSWERS:
+    for index, answer in enumerate(ANSWERS):
+        if stop == "pre-final" and index == 1:
+            assert_boundary(trace_path, stop)
+            print("boundary: stopped before the final interview answer")
+            return
         messages = turn(client, answer)
         said += messages
         print(f"  turn {agent_turns}: {messages[0][:70]}...")
@@ -129,16 +155,37 @@ def run_conversation(client: httpx.Client) -> None:
     assert 8 <= len(programs) <= 12, f"shortlist size {len(programs)} (SC-001: 8-12)"
     assert any("CV" in m for m in said), "no CV request after the shortlist"
 
+    if stop == "shortlist":
+        assert_boundary(trace_path, stop)
+        print("boundary: stopped at the CV-input pause after shortlist")
+        return
+
     upload = client.post(f"/upload?name={CV_FIXTURE.name}", content=CV_FIXTURE.read_bytes())
     upload.raise_for_status()
     said += (echo := turn(client, upload.json()["path"]))
     assert any("read from your CV" in m for m in echo), f"no CV facts echo in {echo}"
     print("cv: uploaded, facts echoed")
 
+    if stop == "cv-echo":
+        assert_boundary(trace_path, stop)
+        print("boundary: stopped after CV echo")
+        return
+
     said += (final := turn(client, CONFIRM))
     verdicts = next((m for m in final if m.startswith("Here is how your confirmed")), None)
     assert verdicts, f"no fit verdicts after confirmation, got {final}"
     lines = [ln for ln in verdicts.splitlines() if ln.startswith("- ")]
+    assert len(lines) == min(5, len(programs)), f"first fit batch assessed {len(lines)} programs"
+    if stop == "first-fit-batch":
+        assert_boundary(trace_path, stop)
+        print("boundary: stopped after the first fit batch")
+        return
+
+    while len(lines) < len(programs):
+        said += (final := turn(client, "yes"))
+        verdicts = next((m for m in final if m.startswith("Here is how your confirmed")), None)
+        assert verdicts, f"no continued fit verdicts, got {final}"
+        lines = [ln for ln in verdicts.splitlines() if ln.startswith("- ")]
     assert len(lines) == len(programs), f"{len(lines)} verdicts for {len(programs)} programs"
     labeled = [ln for ln in lines if any(f": {label}" in ln for label in
                ("strong", "borderline", "reach", "unknown"))]
@@ -154,34 +201,38 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-gemini", action="store_true",
                         help="run with GOOGLE_API_KEY unset (SC-004 fallback proof)")
+    parser.add_argument("--stop", choices=STOPS, help="stop at one focused acceptance boundary")
     args = parser.parse_args()
 
-    env = dict(os.environ)
-    if args.no_gemini:
-        env["GOOGLE_API_KEY"] = ""  # masks the .env value for the child server
+    with tempfile.TemporaryDirectory(prefix="postgrad-advisor-trace-") as trace_dir:
+        trace_path = Path(trace_dir) / "trace.jsonl"
+        env = dict(os.environ)
+        env.update(TRACE_ENABLED="true", TRACE_PATH=str(trace_path))
+        if args.no_gemini:
+            env["GOOGLE_API_KEY"] = ""  # masks the .env value for the child server
 
-    server = subprocess.Popen(
-        ["uv", "run", "uvicorn", "app.server:app", "--port", str(PORT)],
-        cwd=ROOT, env=env, start_new_session=True,
-    )
-    try:
-        with httpx.Client(base_url=f"http://127.0.0.1:{PORT}",
-                          timeout=httpx.Timeout(600, connect=5)) as client:
-            for _ in range(60):  # readiness: up to 30s
-                if server.poll() is not None:
-                    sys.exit(f"server exited early (is port {PORT} taken?)")
-                try:  # must be OUR page — a stranger on the port also 200s
-                    if "Postgrad Advisor" in client.get("/").raise_for_status().text:
-                        break
-                except httpx.HTTPError:
-                    time.sleep(0.5)
-            else:
-                sys.exit("server never became ready")
-            run_conversation(client)
-        label = "SC-004 (no Gemini)" if args.no_gemini else "SC-001"
-        print(f"PASS: {label} scripted conversation completed end to end")
-    finally:
-        os.killpg(server.pid, signal.SIGTERM)
+        server = subprocess.Popen(
+            ["uv", "run", "uvicorn", "app.server:app", "--port", str(PORT)],
+            cwd=ROOT, env=env, start_new_session=True,
+        )
+        try:
+            with httpx.Client(base_url=f"http://127.0.0.1:{PORT}",
+                              timeout=httpx.Timeout(600, connect=5)) as client:
+                for _ in range(60):  # readiness: up to 30s
+                    if server.poll() is not None:
+                        sys.exit(f"server exited early (is port {PORT} taken?)")
+                    try:  # must be OUR page — a stranger on the port also 200s
+                        if "Postgrad Advisor" in client.get("/").raise_for_status().text:
+                            break
+                    except httpx.HTTPError:
+                        time.sleep(0.5)
+                else:
+                    sys.exit("server never became ready")
+                run_conversation(client, args.stop, trace_path)
+            label = args.stop or ("SC-004 (no Gemini)" if args.no_gemini else "SC-001")
+            print(f"PASS: {label} scripted conversation completed")
+        finally:
+            os.killpg(server.pid, signal.SIGTERM)
 
 
 if __name__ == "__main__":

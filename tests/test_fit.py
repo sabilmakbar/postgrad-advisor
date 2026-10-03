@@ -18,21 +18,12 @@ from langgraph.types import Command
 import app.cv as cv_mod
 import app.fit as fit_mod
 import app.graph as graph_mod
-import app.model_layer as model_layer
 from app.cv import CVConfirmation, parse_cv
 from app.fit import _PROB_RE, MAX_SEARCHES, FitVerdict, fit_node
 from app.graph import _fit_batch_route, _fit_more_decide, _fit_more_route, build_graph
 from app.prompts import CV_REQUEST, CV_UNREADABLE, FIT_MORE_PROMPT
 from app.requirements_search import SearchResult
 from app.state import CVFacts, InterviewState, ShortlistEntry, SlotUpdate
-
-
-@pytest.fixture(autouse=True)
-def _no_live_probes(monkeypatch):
-    """Belt and braces: if anything falls through to real chain building, the
-    id health probe must not hit the network."""
-    monkeypatch.setattr(model_layer, "_probe_cache", {})
-    monkeypatch.setattr(model_layer, "_probe_status", lambda provider, model_id: 200)
 
 
 FIXTURES = Path(__file__).parent / "fixtures"

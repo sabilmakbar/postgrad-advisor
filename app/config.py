@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # Light tier (FR-011 / AD-7). Blank id in .env = provider disabled for the
     # light tier; all light ids blank = tier disabled (light calls degrade to
-    # heavy). Defaults verified LIVE with a 1-token generation probe, 200 for
+    # heavy). Defaults verified LIVE with the explicit smoke generation probe, 200 for
     # both (set 2026-08-28, re-verified 2026-08-29; list presence alone lies —
     # gemini-2.5-flash is still listed yet 404s on generation).
     gemini_light_model: str = "gemini-3.5-flash-lite"

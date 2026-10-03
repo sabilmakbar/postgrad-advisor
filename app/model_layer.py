@@ -214,10 +214,6 @@ def _limiter(provider: str, model: str, rpm: float) -> InMemoryRateLimiter:
     return _rate_limiters[key]
 
 
-# Health-probe verdict per (provider, model id), for the process lifetime.
-_probe_cache: dict[tuple[str, str], bool] = {}
-
-
 def _probe_status(provider: str, model_id: str) -> int:
     """HTTP status of a 1-token generation with the configured key; 0 on network
     error. Generation access is the real check — list presence lies (a retired
@@ -259,40 +255,19 @@ def _probe_status(provider: str, model_id: str) -> int:
         return 0
 
 
-def _generation_ok(provider: str, model_id: str) -> bool:
-    """Dead iff the generation probe 404s. Anything else (200/401/429/network
-    trouble) keeps the id — fail open, so a flaky probe never disables a
-    provider. One probe per id per process (cached)."""
-    # ponytail: fail-open + process-lifetime cache; add re-probe/TTL only if a
-    # provider ever starts 404ing intermittently.
-    key = (provider, model_id)
-    if key not in _probe_cache:
-        alive = _probe_status(provider, model_id) != 404
-        if not alive:
-            logger.warning(
-                "model id %r (%s) 404s on generation; skipping it in the chain",
-                model_id,
-                provider,
-            )
-        _probe_cache[key] = alive
-    return _probe_cache[key]
-
-
 def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
     """(model, transient types) for each configured provider, in fallback order.
 
     Light tier: a blank light id disables that provider for the tier; an empty
     result means the tier is unconfigured and the caller degrades to heavy
-    (AC 5) instead of raising. Ids that fail the generation probe are warned
-    about and skipped (AC 2)."""
+    (AC 5) instead of raising. Availability is handled by runtime fallback;
+    only the explicit smoke command probes generation access."""
     light = tier == "light"
     models: list[_ProviderModel] = []
-    configured = False
     if settings.google_api_key:
         model_id = settings.gemini_light_model if light else settings.gemini_model
         rpm = (settings.gemini_light_rpm if light else None) or settings.gemini_rpm
-        configured |= bool(model_id)
-        if model_id and _generation_ok("google", model_id):
+        if model_id:
             models.append(
                 (
                     ChatGoogleGenerativeAI(
@@ -313,8 +288,7 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
     if settings.groq_api_key:
         model_id = settings.groq_light_model if light else settings.groq_model
         rpm = (settings.groq_light_rpm if light else None) or settings.groq_rpm
-        configured |= bool(model_id)
-        if model_id and _generation_ok("groq", model_id):
+        if model_id:
             models.append(
                 (
                     ChatGroq(
@@ -331,8 +305,7 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
         model_id = (
             settings.workers_ai_light_model if light else settings.workers_ai_model
         )
-        configured |= bool(model_id)
-        if model_id and _generation_ok("workers_ai", model_id):
+        if model_id:
             models.append(
                 (
                     ChatOpenAI(
@@ -351,12 +324,6 @@ def _build_models(tier: str = "heavy") -> list[_ProviderModel]:
     if not models:
         if light:
             return []
-        if configured:
-            raise AllProvidersExhausted(
-                "The configured model IDs are unavailable. Run the smoke check "
-                "and review its model-access results.",
-                "model_unavailable",
-            )
         raise AllProvidersExhausted(
             "No model provider is configured. Set an API key and enabled model "
             "ID in .env (see .env.example).",

@@ -12,7 +12,6 @@ from langchain_core.runnables import RunnableLambda
 from langgraph.types import Command
 
 import app.graph as graph_mod
-import app.model_layer as model_layer
 from app.graph import _REQUIRED_SLOTS, build_graph
 from app.prompts import (
     CV_REQUEST,
@@ -22,14 +21,6 @@ from app.prompts import (
     TURN_CAP_MESSAGE,
 )
 from app.state import InterviewState, SlotUpdate
-
-
-@pytest.fixture(autouse=True)
-def _no_live_probes(monkeypatch):
-    """Belt and braces: if anything falls through to real chain building, the
-    id health probe must not hit the network."""
-    monkeypatch.setattr(model_layer, "_probe_cache", {})
-    monkeypatch.setattr(model_layer, "_probe_status", lambda provider, model_id: 200)
 
 
 def _wire(monkeypatch, questions, parses):

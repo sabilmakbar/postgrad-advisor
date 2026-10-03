@@ -25,9 +25,24 @@ Keys (all free tiers, all optional except at least one model provider):
 | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | last-resort model | chain is shorter |
 | `TAVILY_API_KEY` | entry-requirement search | falls back to DuckDuckGo |
 
-Tests: `uv run pytest` (112, all offline — no key needed).
+Tests: `uv run pytest -q` (all offline — no key needed).
 End-to-end against live providers: `uv run python scripts/e2e_scripted.py` (add `--no-gemini`
 to prove the fallback path).
+
+Focused live checks spend quota only through the selected boundary. Each command creates an
+isolated metadata-only trace and fails if later graph or search work appears in it.
+
+| Human check | Command | Stops |
+|---|---|---|
+| Interview questions before handoff | `uv run python scripts/e2e_scripted.py --stop pre-final` | Before the answer that triggers shortlist |
+| Shortlist and CV request | `uv run python scripts/e2e_scripted.py --stop shortlist` | At the CV-input pause |
+| CV parsing and fact echo | `uv run python scripts/e2e_scripted.py --stop cv-echo` | Before confirmation and fit work |
+| Initial fit results | `uv run python scripts/e2e_scripted.py --stop first-fit-batch` | After the first batch of at most five programs |
+| All configured model IDs | `uv run python -m app.smoke --check` | After one explicit generation probe per nonblank configured model |
+
+Fit checks are the expensive boundary: every assessed program spends at least one requirements
+search and one heavy model judgment. If the first evidence is insufficient, the bounded recovery
+may spend one additional search and one additional heavy judgment for that program.
 
 ## What to expect, step by step
 
@@ -110,8 +125,9 @@ requirements found, plus **at least one source URL**.
 
 `app/graph.py` is a LangGraph state machine: interview → shortlist → CV intake → confirm → fit →
 summary. Each node calls models through `app/model_layer.py`, never a provider SDK directly — that
-layer owns the fallback chain (Gemini → Groq → Cloudflare), retries on transient errors only, shares
-rate limiters per model, and skips models whose ids fail a generation probe.
+layer owns the fallback chain (Gemini → Groq → Cloudflare), retries on transient errors only, and
+shares rate limiters per model. Generation probes run only through the explicit smoke check;
+normal requests fall through when a configured model is unavailable.
 
 Two anti-hallucination guarantees are **structural, not prompt-based**:
 

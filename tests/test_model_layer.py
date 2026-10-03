@@ -11,6 +11,7 @@ from langchain_core.language_models.chat_models import SimpleChatModel
 from langchain_core.runnables import RunnableLambda
 
 import app.model_layer as model_layer
+import app.smoke as smoke
 from app.model_layer import (
     _GOOGLE_TRANSIENT,
     AllProvidersExhausted,
@@ -22,13 +23,6 @@ from app.model_layer import (
 )
 from app.config import settings
 
-
-@pytest.fixture(autouse=True)
-def _no_live_probes(monkeypatch):
-    """Health probe answers 200 offline (fresh cache per test); dead-id tests
-    override _probe_status themselves."""
-    monkeypatch.setattr(model_layer, "_probe_cache", {})
-    monkeypatch.setattr(model_layer, "_probe_status", lambda provider, model_id: 200)
 
 FAST_BACKOFF = {"initial": 0.001, "max": 0.005}
 
@@ -142,21 +136,13 @@ def test_exhaustion_kinds_discriminate_timeout_connection_and_quota(monkeypatch)
     assert exc_info.value.kind == "quota"  # RunnableWithFallbacks raises first_error
 
 
-def test_build_failure_distinguishes_unconfigured_from_rejected_ids(monkeypatch):
+def test_build_failure_reports_unconfigured(monkeypatch):
     for key in ("google_api_key", "groq_api_key", "cloudflare_api_token", "cloudflare_account_id"):
         monkeypatch.setattr(settings, key, None)
     with pytest.raises(AllProvidersExhausted) as exc_info:
         _build_models()
     assert exc_info.value.kind == "unconfigured"
     assert ".env" in str(exc_info.value)
-
-    monkeypatch.setattr(settings, "google_api_key", "configured")
-    monkeypatch.setattr(model_layer, "_probe_status", lambda provider, model_id: 404)
-    with pytest.raises(AllProvidersExhausted) as exc_info:
-        _build_models()
-    assert exc_info.value.kind == "model_unavailable"
-    assert "smoke check" in str(exc_info.value)
-
 
 def test_attempt_callback_uses_retry_tags_without_retained_counts(monkeypatch):
     statuses = []
@@ -211,6 +197,21 @@ def test_google_transient_predicate_matches_429_only():
     assert isinstance(ClientError(429, {}), _GOOGLE_TRANSIENT)
     assert not isinstance(ClientError(401, {}), _GOOGLE_TRANSIENT)
     assert isinstance(ServerError(500, {}), _GOOGLE_TRANSIENT)
+
+
+def test_google_404_falls_through_once():
+    from google.genai.errors import ClientError
+
+    calls = {"calls": 0}
+    chain = _compose(
+        [
+            (_failing(calls, ClientError(404, {})), _GOOGLE_TRANSIENT),
+            (RunnableLambda(lambda _: "ok from fallback"), (FakeRateLimit,)),
+        ],
+        FAST_BACKOFF,
+    )
+    assert chain.invoke("hi") == "ok from fallback"
+    assert calls["calls"] == 1
 
 
 def test_rate_limiters_shared_across_chain_builds(monkeypatch):
@@ -353,20 +354,41 @@ def test_both_tiers_exhausted_raises(monkeypatch):
         chat(tier="light").invoke("hi")
 
 
-def test_dead_id_warned_and_skipped_at_build(monkeypatch, caplog):
-    # AC 2 / health check: a 404-on-generation id is skipped with a warning;
-    # counterpart in the same run: probe 200 keeps it.
+def test_chain_construction_never_probes(monkeypatch):
     constructed, _ = _fake_providers(monkeypatch)
     monkeypatch.setattr(
         model_layer,
         "_probe_status",
-        lambda provider, model_id: 404 if model_id == settings.gemini_model else 200,
+        lambda *_: pytest.fail("normal chain construction issued a generation probe"),
     )
-    with caplog.at_level("WARNING"):
-        models = _build_models()
-    assert constructed == [settings.groq_model]  # gemini skipped, groq kept
-    assert len(models) == 1
-    assert "404s on generation" in caplog.text
+    chat()
+    structured(dict)
+    assert constructed == list(HEAVY_IDS) * 2
+
+
+def test_explicit_smoke_checks_every_configured_nonblank_model(monkeypatch, capsys):
+    monkeypatch.setattr(settings, "google_api_key", "k")
+    monkeypatch.setattr(settings, "groq_api_key", "k")
+    monkeypatch.setattr(settings, "cloudflare_api_token", "k")
+    monkeypatch.setattr(settings, "cloudflare_account_id", "acct")
+    monkeypatch.setattr(settings, "workers_ai_light_model", "")
+    seen = []
+    monkeypatch.setattr(
+        smoke,
+        "_probe_status",
+        lambda provider, model_id: seen.append((provider, model_id)) or 200,
+    )
+
+    smoke._check()
+
+    assert seen == [
+        ("google", settings.gemini_model),
+        ("google", settings.gemini_light_model),
+        ("groq", settings.groq_model),
+        ("groq", settings.groq_light_model),
+        ("workers_ai", settings.workers_ai_model),
+    ]
+    assert len(capsys.readouterr().out.strip().splitlines()) == len(seen)
 
 
 def test_every_provider_gets_a_finite_timeout_and_owns_no_retries(monkeypatch):
@@ -392,7 +414,6 @@ def test_every_provider_gets_a_finite_timeout_and_owns_no_retries(monkeypatch):
 
     for name in ("ChatGoogleGenerativeAI", "ChatGroq", "ChatOpenAI"):
         monkeypatch.setattr(model_layer, name, Recorder)
-    monkeypatch.setattr(model_layer, "_probe_status", lambda provider, model_id: 200)
     monkeypatch.setattr(settings, "google_api_key", "k")
     monkeypatch.setattr(settings, "groq_api_key", "k")
     monkeypatch.setattr(settings, "cloudflare_api_token", "k")

@@ -7,7 +7,6 @@ from langgraph.types import Command
 from pydantic import ValidationError
 
 import app.graph as graph_mod
-import app.model_layer as model_layer
 import app.shortlist as shortlist_mod
 from app.dataset import ProgramDataset, University, load_dataset
 from app.graph import build_graph
@@ -19,12 +18,6 @@ from app.shortlist import (
     shortlist_node,
 )
 from app.state import InterviewState, SlotUpdate
-
-
-@pytest.fixture(autouse=True)
-def _no_live_probes(monkeypatch):
-    monkeypatch.setattr(model_layer, "_probe_cache", {})
-    monkeypatch.setattr(model_layer, "_probe_status", lambda provider, model_id: 200)
 
 
 DATASET = load_dataset().universities

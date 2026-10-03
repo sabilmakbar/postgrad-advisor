@@ -16,7 +16,6 @@ from langgraph.types import Command
 
 import app.cv as cv_mod
 import app.graph as graph_mod
-import app.model_layer as model_layer
 from app.cv import CVConfirmation, split_upload
 from app.graph import build_graph
 from app.prompts import (
@@ -37,13 +36,6 @@ FIXTURE = Path(__file__).parent / "fixtures" / "cv.txt"
 COMPLETE = SlotUpdate(degree_intent="phd", field="machine learning", target_regions=["UK"])
 FIRST_FACTS = CVFacts(degree="BSc Computer Science", gpa="3.7 / 4.0")
 SECOND_FACTS = CVFacts(degree="MSc Computer Science", gpa="3.9 / 4.0")
-
-
-@pytest.fixture(autouse=True)
-def _no_live_probes(monkeypatch):
-    """Belt and braces: nothing may reach the network, not even an id probe."""
-    monkeypatch.setattr(model_layer, "_probe_cache", {})
-    monkeypatch.setattr(model_layer, "_probe_status", lambda provider, model_id: 200)
 
 
 @pytest.fixture
