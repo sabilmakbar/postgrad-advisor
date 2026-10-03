@@ -27,6 +27,7 @@ from app.prompts import (
     CV_REQUEST,
     CV_UNREADABLE,
     FIRST_QUESTION,
+    FIXED_INTERVIEW_QUESTIONS,
     TURN_CAP_MESSAGE,
 )
 from app.model_layer import AllProvidersExhausted
@@ -274,14 +275,21 @@ def test_a_cv_held_from_an_earlier_turn_is_answered_honestly_at_the_cap(
 def test_normal_answer_still_reaches_the_interviewer(monkeypatch, cv_dir):
     """Paired positive for the interception guard: a non-upload answer is parsed
     into slots and gets the next question, exactly as before."""
-    _wire(monkeypatch, questions=["Q2"], parses=[SlotUpdate(degree_intent="phd")])
+    chat_seen = []
+    _wire(
+        monkeypatch,
+        questions=[],
+        parses=[SlotUpdate(degree_intent="phd")],
+        chat_seen=chat_seen,
+    )
     g = build_graph()
     g.invoke({}, _thread())
     state = g.invoke(Command(resume="a PhD, please"), _thread())
 
     assert state["degree_intent"] == "phd"  # the parser ran
     assert state.get("pending_cv") is None
-    assert state["messages"][-1] == ("ai", "Q2")
+    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["field"])
+    assert chat_seen == []
 
 
 def test_text_sent_with_an_upload_is_answered_and_the_cv_held(monkeypatch, cv_dir):
@@ -488,6 +496,7 @@ def test_cv_facts_reach_runtime_context_but_not_transcript(monkeypatch, cv_dir):
     state = g.invoke(Command(resume="a PhD"), _thread())
 
     prompt = chat_seen[0][-1][1]
+    assert len(chat_seen) == 1
     assert "BSc Mathematics" in prompt and "Built NLP models" in prompt
     assert "attribute them to the CV" in prompt
     assert "broad topic such as AI or machine learning is not" in prompt
@@ -501,25 +510,28 @@ def test_threads_without_upload_get_no_cv_context(monkeypatch):
     chat_seen = []
     _wire(
         monkeypatch,
-        questions=["Q2"],
+        questions=[],
         parses=[SlotUpdate(degree_intent="phd")],
         chat_seen=chat_seen,
     )
     g = build_graph()
     g.invoke({}, _thread())
-    g.invoke(Command(resume="a PhD"), _thread())
-    context = chat_seen[0][-1][1]
-    assert "Your CV provisionally reads" not in context
-    assert "A CV arrived but" not in context
+    state = g.invoke(Command(resume="a PhD"), _thread())
+    assert chat_seen == []
+    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["field"])
+    assert state.get("field") is None
+    assert state.get("cv_facts") is None
 
 
 def test_user_answer_not_cv_selects_the_field(monkeypatch, cv_dir):
     facts = CVFacts(degree="BSc Mathematics")
+    chat_seen = []
     _wire(
         monkeypatch,
         questions=["Q2"],
         parses=[SlotUpdate(field="machine learning")],
         facts=[facts],
+        chat_seen=chat_seen,
     )
     g = build_graph()
     g.invoke({}, _thread())
@@ -528,13 +540,14 @@ def test_user_answer_not_cv_selects_the_field(monkeypatch, cv_dir):
     after = g.invoke(Command(resume="AI and machine learning"), _thread())
     assert after["field"] == "machine learning"
     assert after["cv_facts"].degree == "BSc Mathematics"
+    assert len(chat_seen) == 1
 
 
 def test_parse_and_extraction_failures_name_the_correct_cause(monkeypatch, cv_dir):
     chat_seen = []
     _wire(
         monkeypatch,
-        questions=["Q2"],
+        questions=[],
         parses=[SlotUpdate(degree_intent="phd")],
         chat_seen=chat_seen,
     )
@@ -544,10 +557,10 @@ def test_parse_and_extraction_failures_name_the_correct_cause(monkeypatch, cv_di
     state = g.invoke(Command(resume=_upload(cv_dir)), _thread())
     assert state["messages"][-1] == ("ai", CV_PARSE_FAILED)
     assert CV_EXTRACTION_FAILED not in _ai(state)
-    g.invoke(Command(resume="a PhD"), _thread())
-    held_context = chat_seen[0][-1][1]
-    assert "A CV arrived but is not readable or has not been read" in held_context
-    assert "Your CV provisionally reads" not in held_context
+    state = g.invoke(Command(resume="a PhD"), _thread())
+    assert chat_seen == []
+    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["field"])
+    assert state.get("cv_facts") is None
 
     for thread, error in (
         ("provider", AllProvidersExhausted("down")),

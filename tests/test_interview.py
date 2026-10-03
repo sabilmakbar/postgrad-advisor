@@ -14,7 +14,13 @@ from langgraph.types import Command
 import app.graph as graph_mod
 import app.model_layer as model_layer
 from app.graph import _REQUIRED_SLOTS, build_graph
-from app.prompts import CV_REQUEST, FIRST_QUESTION, POSTDOC_DECLINE, TURN_CAP_MESSAGE
+from app.prompts import (
+    CV_REQUEST,
+    FIRST_QUESTION,
+    FIXED_INTERVIEW_QUESTIONS,
+    POSTDOC_DECLINE,
+    TURN_CAP_MESSAGE,
+)
 from app.state import InterviewState, SlotUpdate
 
 
@@ -87,9 +93,7 @@ def test_interview_fills_state_and_hands_off(monkeypatch):
     monkeypatch.setattr(graph_mod, "shortlist_node", lambda s: {"handed_off": True})
     tiers, ask_calls = _wire(
         monkeypatch,
-        # Turn 0 is fixed text, and the 4th answer completes the slots so no
-        # question follows it: 3 generated questions, not 4.
-        questions=["Q-intent", "Q-field", "Q-field-narrower"],
+        questions=["Q-field-narrower"],
         parses=[
             SlotUpdate(degree_intent="phd"),
             SlotUpdate(),  # vague answer: nothing extracted -> follow-up
@@ -114,23 +118,20 @@ def test_interview_fills_state_and_hands_off(monkeypatch):
     assert typed.target_regions == ["Europe", "UK"]
     assert typed.constraints == ["needs funding"]
     assert typed.turns == 4 and typed.turns <= 10
-    assert "Just captured this turn: {'degree_intent': 'PhD'}" in ask_calls[0][-1][1]
-    assert "masters_coursework" not in ask_calls[0][-1][1]
-    assert "masters_research" not in ask_calls[0][-1][1]
-    assert "Just captured this turn" not in ask_calls[1][-1][1]
-    assert "'field': 'machine learning'" in ask_calls[2][-1][1]
-    assert "'focus_area': 'NLP'" in ask_calls[2][-1][1]
-    marker = ask_calls[2][-1][1].split("Just captured this turn:", 1)[1]
-    assert "target_regions" not in marker
+    assert len(ask_calls) == 1
+    assert "Just captured this turn" not in ask_calls[0][-1][1]
+    ai_messages = [text for role, text in state["messages"] if role == "ai"]
+    assert FIXED_INTERVIEW_QUESTIONS["field"] in ai_messages
+    assert FIXED_INTERVIEW_QUESTIONS["target_regions"] in ai_messages
     # AD-7: explicit tiers — heavy for user-facing prose, light for slot parsing
-    assert set(tiers["ask"]) == {"heavy"}
+    assert tiers["ask"] == ["heavy"]
     assert set(tiers["parse"]) == {"light"}
 
 
 def test_bare_degree_is_rejected_once_then_accepted(monkeypatch):
     tiers, ask_calls = _wire(
         monkeypatch,
-        questions=["Q-clarify-degree", "Q-field"],
+        questions=["Q-clarify-degree"],
         parses=[
             SlotUpdate(degree_intent="masters_research"),
             SlotUpdate(degree_intent="masters_research"),
@@ -145,8 +146,8 @@ def test_bare_degree_is_rejected_once_then_accepted(monkeypatch):
 
     state = g.invoke(Command(resume="MSc"), _thread())
     assert state["degree_intent"] == "masters_research"
-    assert state["messages"][-1] == ("ai", "Q-field")
-    assert len(ask_calls) == 2
+    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["field"])
+    assert len(ask_calls) == 1
     assert tiers["parse"] == ["light", "light"]
 
 
@@ -163,7 +164,7 @@ def test_bare_degree_is_rejected_once_then_accepted(monkeypatch):
 def test_discriminating_degree_terms_fill_slot(monkeypatch, answer, intent):
     _wire(
         monkeypatch,
-        questions=["Q-field"],
+        questions=[],
         parses=[SlotUpdate(degree_intent=intent)],
     )
     g = build_graph()
@@ -173,7 +174,7 @@ def test_discriminating_degree_terms_fill_slot(monkeypatch, answer, intent):
     assert not state.get("degree_intent_blocked")
 
 
-def test_canonical_degree_token_never_enters_heavy_interviewer_prompt(monkeypatch):
+def test_captured_degree_uses_fixed_copy_without_heavy_call(monkeypatch):
     heavy_calls = []
 
     monkeypatch.setattr(
@@ -185,14 +186,9 @@ def test_canonical_degree_token_never_enters_heavy_interviewer_prompt(monkeypatc
     )
 
     def fake_chat(tier="heavy"):
-        assert tier == "heavy"
-
         def answer(msgs):
             heavy_calls.append(msgs)
-            return AIMessage(
-                content="research master's. Matches your masters_research goal"
-            )
-
+            return AIMessage(content="unexpected")
         return RunnableLambda(answer)
 
     monkeypatch.setattr(graph_mod, "chat", fake_chat)
@@ -201,15 +197,12 @@ def test_canonical_degree_token_never_enters_heavy_interviewer_prompt(monkeypatc
     state = g.invoke(Command(resume="a research master's"), _thread())
 
     assert state["degree_intent"] == "masters_research"  # canonical state survives
-    prompt = "\n".join(text for _, text in heavy_calls[0])
-    assert "masters_research" not in prompt
-    assert "masters_coursework" not in prompt
-    assert " or phd)" not in prompt
+    assert heavy_calls == []
     assert "masters_research" not in state["messages"][-1][1]
-    assert "Matches your research master's goal" in state["messages"][-1][1]
+    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["field"])
 
 
-def test_user_authored_canonical_degree_literal_is_preserved(monkeypatch):
+def test_fixed_route_preserves_user_authored_canonical_degree_literal(monkeypatch):
     heavy_calls = []
     monkeypatch.setattr(
         graph_mod,
@@ -235,9 +228,25 @@ def test_user_authored_canonical_degree_literal_is_preserved(monkeypatch):
     state = g.invoke(Command(resume=literal), _thread())
 
     assert ("human", literal) in state["messages"]
-    containing = [(role, text) for role, text in heavy_calls[0] if "masters_research" in text]
-    assert containing == [("human", literal)]
+    assert heavy_calls == []
     assert "masters_research" not in state["messages"][-1][1]
+
+
+def test_fixed_field_copy_keeps_distinct_programme_directions(monkeypatch):
+    _, ask_calls = _wire(
+        monkeypatch,
+        questions=[],
+        parses=[SlotUpdate(degree_intent="phd")],
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    state = g.invoke(Command(resume="a PhD"), _thread())
+
+    question = state["messages"][-1][1]
+    assert ask_calls == []
+    assert "computer-science foundations" in question
+    assert "mathematical or statistical foundations" in question
+    assert "application-led or hybrid" in question
 
 
 def test_postdoc_answer_gets_scope_decline(monkeypatch):

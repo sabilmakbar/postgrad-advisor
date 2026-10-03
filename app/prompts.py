@@ -40,6 +40,16 @@ FIRST_QUESTION = (
     "(coursework), a research master's, or a PhD?"
 )
 
+FIXED_INTERVIEW_QUESTIONS = {
+    "degree_intent": FIRST_QUESTION,
+    "field": (
+        "Which study direction fits you best: computer-science foundations such as algorithms, "
+        "systems, and machine learning; mathematical or statistical foundations; or an "
+        "application-led or hybrid programme?"
+    ),
+    "target_regions": "Which countries or regions would you consider for study?",
+}
+
 POSTDOC_DECLINE = (
     "I can't help with postdoc positions — this service covers taught and "
     "research Masters programmes and PhDs only. Postdoc searches are "

@@ -4,7 +4,8 @@ conditional edge until the state is complete, then the shortlister node
 
 Each interviewer visit is one agent turn: receive the user's answer via
 ``interrupt()`` (so the graph pauses between turns), parse it into slots on the
-light tier, then ask the next question on the heavy tier. Drive it with
+light tier, then select fixed routine copy or ask the heavy tier for a tailored
+follow-up. Drive it with
 ``graph.invoke({}, config)`` to get the opening question, then
 ``graph.invoke(Command(resume=<answer>), config)`` per user answer.
 """
@@ -34,6 +35,7 @@ from app.prompts import (
     CV_PARSE_FAILED,
     CV_RECEIVED,
     FIRST_QUESTION,
+    FIXED_INTERVIEW_QUESTIONS,
     INTERVIEWER_INSTRUCTIONS,
     PARSER_INSTRUCTIONS,
     PERSONA,
@@ -86,6 +88,10 @@ def _next_open_slot(state: InterviewState) -> str | None:
         if not getattr(state, name):
             return name
     return None
+
+
+def _fixed_interview_question(state: InterviewState) -> str:
+    return FIXED_INTERVIEW_QUESTIONS[_next_open_slot(state)]
 
 
 def _read_upload(path: str) -> tuple[dict, str]:
@@ -202,6 +208,10 @@ def _interviewer(state: InterviewState) -> dict:
     if capped:
         messages.append(("ai", TURN_CAP_MESSAGE))
         return {**updates, "messages": messages, "ended": True}
+
+    if captured and not merged.cv_facts:
+        messages.append(("ai", decline + _fixed_interview_question(merged)))
+        return {**updates, "messages": messages, "turns": state.turns + 1}
 
     known = {
         k: v
