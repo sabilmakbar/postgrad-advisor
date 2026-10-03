@@ -64,13 +64,9 @@ Fill only the fields the answer clearly supports; leave everything else unset.
 Set postdoc_interest to true only if the user asks about postdoc positions."""
 
 SHORTLIST_INSTRUCTIONS = """\
-You are choosing a program shortlist for the interviewed candidate. The
-numbered candidate list in the message is the complete universe of options:
-pick ONLY from it, giving each pick's index and copying its university name
-exactly as written in that line.
+The program shortlist has already been selected and ordered. Annotate each
+listed university in the same order.
 
-- Pick the best-fitting 8-12 candidates (every candidate, if fewer than 8 are
-  listed), best fit first.
 - why_it_fits is ONE line grounding the fit in the candidate's interview
   answers (field, focus area, regions, constraints) — never generic praise.
 - Stay realistic per your persona: where fit is weak — a widened field or

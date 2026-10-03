@@ -1,11 +1,8 @@
-"""Shortlister node (story 004): code filters the dataset, the LLM only ranks
-and annotates the filtered candidates by index. Output maps indices back to
-dataset rows, so a made-up university is impossible by construction (AD-3).
-"""
+"""Shortlister node: code filters and ranks; the LLM only annotates."""
 
 import re
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.dataset import University, load_dataset
 from app.model_layer import structured
@@ -19,6 +16,8 @@ from app.prompts import (
 from app.state import InterviewState, ShortlistEntry
 
 MIN_SIZE, MAX_SIZE = 8, 12
+TILT_WEIGHT = 15.0
+MISSING_ANNOTATION = "No additional model annotation was returned."
 
 _DEGREE_MAP = {  # interview intent -> dataset degree type
     "masters_coursework": "masters_course",
@@ -128,13 +127,28 @@ def _region_match(regions: list[str], u: University) -> bool:
     return False
 
 
-def _rank_key(u: University) -> float:
-    # Null rank = unranked this cycle: never sorted as if top-ranked (dev note).
-    if u.rank is None:
-        return float("inf")
-    if isinstance(u.rank, str):  # QS band like "801-850" or "1401+"
-        return float(u.rank.split("-")[0].rstrip("+"))
-    return float(u.rank)
+def _rank_key(state: InterviewState, u: University) -> tuple[bool, bool, bool, float]:
+    # This is a deliberate bounded heuristic, not evidence that a degree is
+    # offered. This dataset's tilt spans -64.7..93.5 (30.8 SD); limiting it to
+    # +/-15 keeps it from becoming an unbounded primary sort key. There is no
+    # labelled programme-fit data to calibrate 15; changing it needs a new
+    # measured decision.
+    direction = 1 if state.degree_intent == "masters_coursework" else -1
+    adjusted = (
+        u.base_score
+        + direction
+        * TILT_WEIGHT
+        * (u.tilt if u.tilt is not None else 0.0)
+        / 100.0
+        if u.base_score is not None
+        else 0.0
+    )
+    return (
+        not _region_match(state.target_regions, u),
+        not _field_match(state.field, u),
+        u.base_score is None,
+        -adjusted,
+    )
 
 
 def _rank_context(u: University) -> str:
@@ -175,16 +189,14 @@ def prefilter(
             f"target regions; {len(pool)} candidates after widening"
         )
         candidates = pool
-    return sorted(candidates, key=_rank_key), notes
+    return sorted(candidates, key=lambda u: _rank_key(state, u)), notes
 
 
 class Pick(BaseModel):
-    """One ranked pick; index refers to the numbered candidate list."""
+    """One annotation for the corresponding code-selected row."""
 
-    index: int = Field(description="Index of the pick in the candidate list.")
-    university: str = Field(
-        description="University name, copied EXACTLY from that candidate line."
-    )
+    model_config = ConfigDict(extra="forbid")
+
     why_it_fits: str = Field(
         description="One line: why this program fits the candidate's interview "
         "answers, with a plain caveat where fit is weak."
@@ -192,36 +204,11 @@ class Pick(BaseModel):
 
 
 class Picks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     picks: list[Pick] = Field(
-        description=f"{MIN_SIZE}-{MAX_SIZE} picks, best fit first."
+        description="One annotation per selected university, in the given order."
     )
-
-
-def _ground(
-    picks: list[Pick],
-    candidates: list[University],
-    degree: str,
-    seen: set[int],
-    entries: list[ShortlistEntry],
-) -> None:
-    """The structural guard: an index outside the filtered list, a repeat,
-    or a name that doesn't match the dataset row is dropped, not trusted."""
-    for p in picks:
-        if p.index in seen or not 0 <= p.index < len(candidates):
-            continue
-        u = candidates[p.index]
-        if p.university != u.university:
-            continue
-        seen.add(p.index)
-        entries.append(
-            ShortlistEntry(
-                university=u.university,
-                country=u.country,
-                rank_context=_rank_context(u),
-                degree_type=degree,
-                why_it_fits=humanize_degree_text(p.why_it_fits),
-            )
-        )
 
 
 def _render(entries: list[ShortlistEntry], notes: list[str]) -> str:
@@ -238,14 +225,14 @@ def _render(entries: list[ShortlistEntry], notes: list[str]) -> str:
 
 
 def shortlist_node(state: InterviewState) -> dict:
-    """Runs once the interview completes: filter, LLM-rank by index, map
-    indices back to dataset rows, render with any widening named (AC 1-3)."""
+    """Filter and rank in code, then ask the LLM to annotate selected rows."""
     candidates, notes = prefilter(state, load_dataset().universities)
+    selected = candidates[:MAX_SIZE]
 
     lines = "\n".join(
-        f"{i}. {u.university} — {u.country} ({u.continent}); {_rank_context(u)};"
+        f"- {u.university} — {u.country} ({u.continent}); {_rank_context(u)};"
         f" fields: {', '.join(u.fields)}"
-        for i, u in enumerate(candidates)
+        for u in selected
     )
     profile = (
         f"Candidate profile — degree: {degree_intent_label(state.degree_intent)}; "
@@ -261,36 +248,22 @@ def shortlist_node(state: InterviewState) -> dict:
         ("human", f"{profile}\n\nCandidates:\n{lines}"),
     ]
     degree = _DEGREE_MAP[state.degree_intent]
-    entries: list[ShortlistEntry] = []
-    seen: set[int] = set()
-    _ground(chain.invoke(msgs).picks, candidates, degree, seen, entries)
-
-    grounding_notice = None
-    if len(entries) < MIN_SIZE <= len(candidates):
-        # Floor guard (fix round): enough valid candidates exist but the model
-        # under-returned or the guard dropped picks — retry exactly once, then
-        # ship short WITH a notice, never silently. A thin widened pool
-        # (<MIN_SIZE rows) is already covered by the AC-3 widening notes.
-        need = MIN_SIZE - len(entries)
-        retry = msgs + [
-            (
-                "human",
-                f"Only {len(entries)} of your picks could be grounded against "
-                f"the candidate list. Give at least {need} more grounded picks "
-                f"from the same numbered candidates, skipping indices "
-                f"{sorted(seen)}.",
-            )
-        ]
-        _ground(chain.invoke(retry).picks, candidates, degree, seen, entries)
-        if len(entries) < MIN_SIZE:
-            grounding_notice = (
-                f"only {len(entries)} picks could be grounded against the dataset"
-            )
-
-    entries = entries[:MAX_SIZE]  # upper bound enforced in code, not the prompt
+    annotations = chain.invoke(msgs).picks[: len(selected)]
+    entries = [
+        ShortlistEntry(
+            university=u.university,
+            country=u.country,
+            rank_context=_rank_context(u),
+            degree_type=degree,
+            why_it_fits=humanize_degree_text(
+                annotations[i].why_it_fits
+                if i < len(annotations)
+                else MISSING_ANNOTATION
+            ),
+        )
+        for i, u in enumerate(selected)
+    ]
     rendered = _render(entries, notes)
-    if grounding_notice:
-        rendered += f"\n{grounding_notice}"
     return {
         "handed_off": True,
         "shortlist": entries,
