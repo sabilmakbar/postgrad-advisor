@@ -127,11 +127,13 @@ def test_verdict_schema_sources_and_tier(monkeypatch):
         label="strong",
         reasons=["GPA 3.7/4.0 meets the stated 3.5 minimum"],
         sources=[_url("Uni-0")],
+        sufficient=True,
     )
     invented = FitVerdict(
         label="reach",
         reasons=["IELTS 7.5 is below the stated 8.0 requirement"],
         sources=["https://invented.example/nowhere"],
+        sufficient=True,
     )
     queries, judge_calls, seen = _wire(monkeypatch, [good, invented])
 
@@ -162,6 +164,7 @@ def test_canonical_degree_token_never_enters_heavy_fit_prompt_or_reply(monkeypat
         label="borderline",
         reasons=["Matches your masters_research goal"],
         sources=[_url("Uni-0")],
+        sufficient=True,
     )
     queries, judge_calls, _ = _wire(monkeypatch, [bad])
     out = fit_node(_state(1))
@@ -180,28 +183,39 @@ def test_canonical_degree_token_never_enters_heavy_fit_prompt_or_reply(monkeypat
 
 
 def test_unknown_when_search_empty(monkeypatch):
-    # Empty search -> unknown, searched query shown, judge NEVER called.
+    # Empty search gets one correction; both attempted queries are shown.
+    retry = "Uni-0 PhD entry requirements"
+    insufficient = FitVerdict(
+        label="unknown", reasons=[], sources=[], sufficient=False,
+        missing_evidence="no admission requirements found", reformulated_query=retry,
+    )
     queries, judge_calls, _ = _wire(
         monkeypatch,
-        [],
+        [insufficient, insufficient.model_copy(update={"reformulated_query": None})],
         found=lambda q: SearchResult(query=q, text="", sources=[]),
     )
     out = fit_node(_state(1))
     (v,) = out["fit_verdicts"]
     assert v.label == "unknown" and v.sources == []
-    assert queries[0] in v.reasons[0]  # the searched query is shown
-    assert judge_calls == []  # never guessed
-    assert queries[0] in out["messages"][-1][1]
+    assert all(query in v.reasons[0] for query in queries)
+    assert queries == ["Uni-0 computer science admission requirements", retry]
+    assert len(judge_calls) == 2
+    assert "[no results]" in judge_calls[0][-1][1]
 
 
 def test_llm_unknown_still_shows_query(monkeypatch):
     # The judge itself may find no requirements in the fetched text.
-    verdict = FitVerdict(label="unknown", reasons=["page was a news article"], sources=[])
-    queries, _, _ = _wire(monkeypatch, [verdict])
+    verdict = FitVerdict(
+        label="unknown", reasons=["page was a news article"], sources=[],
+        sufficient=False, missing_evidence="page was a news article",
+        reformulated_query="invalid query",
+    )
+    queries, judge_calls, _ = _wire(monkeypatch, [verdict])
     out = fit_node(_state(1))
     (v,) = out["fit_verdicts"]
     assert v.label == "unknown" and v.sources == []
     assert queries[0] in v.reasons[0]
+    assert len(judge_calls) == 1
 
 
 # --- search budget (AC 2) ----------------------------------------------------
@@ -211,7 +225,10 @@ def test_search_budget_enforced_in_code(monkeypatch):
     # 15 programs, budget 12: exactly 12 searches; the rest are unknown with
     # the budget named — counterpart in the same run: the first 12 DID search.
     verdicts = [
-        FitVerdict(label="borderline", reasons=[f"r{i}"], sources=[_url(f"Uni-{i}")])
+        FitVerdict(
+            label="borderline", reasons=[f"r{i}"], sources=[_url(f"Uni-{i}")],
+            sufficient=True,
+        )
         for i in range(MAX_SEARCHES)
     ]
     queries, judge_calls, _ = _wire(monkeypatch, verdicts)
@@ -227,12 +244,154 @@ def test_search_budget_enforced_in_code(monkeypatch):
 
 def test_budget_counter_carries_prior_use(monkeypatch):
     # The counter lives in graph state: 11 already used leaves room for 1.
-    verdicts = [FitVerdict(label="strong", reasons=["r"], sources=[_url("Uni-0")])]
+    verdicts = [
+        FitVerdict(label="strong", reasons=["r"], sources=[_url("Uni-0")], sufficient=True)
+    ]
     queries, _, _ = _wire(monkeypatch, verdicts)
     out = fit_node(_state(3, searches_used=MAX_SEARCHES - 1))
     assert len(queries) == 1
     assert out["searches_used"] == MAX_SEARCHES
     assert [v.label for v in out["fit_verdicts"]] == ["strong", "unknown", "unknown"]
+
+
+def test_budget_counter_clamps_invalid_incoming_value(monkeypatch):
+    queries, judge_calls, _ = _wire(monkeypatch, [])
+    out = fit_node(_state(1, searches_used=MAX_SEARCHES + 1))
+
+    assert queries == [] and judge_calls == []
+    assert out["searches_used"] == MAX_SEARCHES
+    assert out["fit_verdicts"][0].label == "unknown"
+
+
+# --- bounded evidence recovery (story 016) ----------------------------------
+
+
+def test_insufficient_evidence_recovers_once_with_grounded_sources(monkeypatch):
+    retry = "Uni-0 PhD GPA and English admission requirements"
+    first = FitVerdict(
+        label="unknown", reasons=[], sources=[], sufficient=False,
+        missing_evidence="the GPA and English thresholds are missing",
+        reformulated_query=retry,
+    )
+    recovered = FitVerdict(
+        label="strong",
+        reasons=["GPA 3.7/4.0 meets 3.5", "estimated 80% probability"],
+        sources=["https://first.example", "https://second.example", "https://invented.example"],
+        sufficient=True,
+    )
+
+    def found(query):
+        if query == retry:
+            return SearchResult(query, "IELTS 7.0 required", ["https://second.example"])
+        return SearchResult(query, "GPA 3.5 required", ["https://first.example"])
+
+    queries, judge_calls, _ = _wire(monkeypatch, [first, recovered], found=found)
+    out = fit_node(_state(1))
+    (verdict,) = out["fit_verdicts"]
+
+    assert queries == ["Uni-0 computer science admission requirements", retry]
+    assert len(judge_calls) == 2 and out["searches_used"] == 2
+    assert verdict.label == "strong"
+    assert verdict.sources == ["https://first.example", "https://second.example"]
+    assert verdict.reasons == ["GPA 3.7/4.0 meets 3.5"]
+    final_prompt = judge_calls[1][-1][1]
+    assert all(query in final_prompt for query in queries)
+
+
+def test_second_insufficient_result_stops_and_lists_both_queries(monkeypatch):
+    retry = "Uni-0 PhD official admission requirements"
+    first = FitVerdict(
+        label="unknown", reasons=[], sources=[], sufficient=False,
+        missing_evidence="official thresholds are missing", reformulated_query=retry,
+    )
+    second = FitVerdict(
+        label="unknown", reasons=[], sources=[], sufficient=False,
+        missing_evidence="official thresholds remain missing", reformulated_query=None,
+    )
+    queries, judge_calls, _ = _wire(monkeypatch, [first, second])
+    out = fit_node(_state(1))
+    (verdict,) = out["fit_verdicts"]
+
+    assert queries == ["Uni-0 computer science admission requirements", retry]
+    assert len(judge_calls) == 2 and out["searches_used"] == 2
+    assert verdict.label == "unknown"
+    assert all(query in verdict.reasons[0] for query in queries)
+
+
+def test_no_budget_for_correction_names_missing_evidence_without_claiming_retry(monkeypatch):
+    retry = "Uni-0 PhD official admission requirements"
+    first = FitVerdict(
+        label="unknown", reasons=[], sources=[], sufficient=False,
+        missing_evidence="official thresholds are missing", reformulated_query=retry,
+    )
+    queries, judge_calls, _ = _wire(monkeypatch, [first])
+    out = fit_node(_state(2, searches_used=MAX_SEARCHES - 1))
+    first_verdict, second_verdict = out["fit_verdicts"]
+
+    assert queries == ["Uni-0 computer science admission requirements"]
+    assert len(judge_calls) == 1 and out["searches_used"] == MAX_SEARCHES
+    assert "official thresholds are missing" in first_verdict.reasons[0]
+    assert retry not in first_verdict.reasons[0]
+    assert second_verdict.label == "unknown"
+
+
+@pytest.mark.parametrize(
+    "retry",
+    [
+        "Other University PhD admission requirements",
+        "Uni-0 master's admission requirements",
+        "Uni-0 PhD and taught master's admission requirements",
+    ],
+)
+def test_corrective_query_must_preserve_program_identity(monkeypatch, retry):
+    first = FitVerdict(
+        label="unknown", reasons=[], sources=[], sufficient=False,
+        missing_evidence="official thresholds are missing", reformulated_query=retry,
+    )
+    queries, judge_calls, _ = _wire(monkeypatch, [first])
+    out = fit_node(_state(1))
+    (verdict,) = out["fit_verdicts"]
+
+    assert queries == ["Uni-0 computer science admission requirements"]
+    assert len(judge_calls) == 1 and out["searches_used"] == 1
+    assert verdict.label == "unknown" and "did not preserve" in verdict.reasons[0]
+
+
+def test_corrective_query_rejects_extended_university_identity(monkeypatch):
+    retry = "University of Oxford Brookes PhD admission requirements"
+    first = FitVerdict(
+        label="unknown", reasons=[], sources=[], sufficient=False,
+        missing_evidence="official thresholds are missing", reformulated_query=retry,
+    )
+    oxford = _entry(0).model_copy(update={"university": "University of Oxford"})
+    queries, judge_calls, _ = _wire(monkeypatch, [first])
+    out = fit_node(_state(shortlist=[oxford]))
+
+    assert queries == ["University of Oxford computer science admission requirements"]
+    assert len(judge_calls) == 1 and out["searches_used"] == 1
+    assert out["fit_verdicts"][0].label == "unknown"
+
+
+def test_corrective_query_accepts_exact_identity_with_normal_search_terms(monkeypatch):
+    retry = "University of Oxford PhD official GPA requirements 2027"
+    first = FitVerdict(
+        label="unknown", reasons=[], sources=[], sufficient=False,
+        missing_evidence="official thresholds are missing", reformulated_query=retry,
+    )
+    recovered = FitVerdict(
+        label="strong", reasons=["GPA 3.7 meets the stated minimum"],
+        sources=[_url(retry)], sufficient=True,
+    )
+    oxford = _entry(0).model_copy(update={"university": "University of Oxford"})
+    queries, judge_calls, _ = _wire(monkeypatch, [first, recovered])
+    out = fit_node(_state(shortlist=[oxford]))
+
+    assert queries == [
+        "University of Oxford computer science admission requirements",
+        retry,
+    ]
+    assert len(judge_calls) == 2 and out["searches_used"] == 2
+    assert out["fit_verdicts"][0].label == "strong"
 
 
 # --- no probabilities (AC 5, AD-4) -------------------------------------------
@@ -252,6 +411,7 @@ def test_probability_scrub_catches_seeded_bad_output(monkeypatch):
         label="borderline",
         reasons=["GPA 3.7/4.0 meets the 3.5 minimum", *bad],
         sources=[_url("Uni-0")],
+        sufficient=True,
     )
     _wire(monkeypatch, [seeded])
 
@@ -265,7 +425,7 @@ def test_probability_scrub_catches_seeded_bad_output(monkeypatch):
 def test_probability_scrub_when_all_reasons_bad(monkeypatch):
     # Every reason seeded bad: verdict still ships without odds, never empty.
     seeded = FitVerdict(
-        label="strong", reasons=["a 90% shot"], sources=[_url("Uni-0")]
+        label="strong", reasons=["a 90% shot"], sources=[_url("Uni-0")], sufficient=True
     )
     _wire(monkeypatch, [seeded])
     out = fit_node(_state(1))
@@ -318,8 +478,8 @@ def test_graph_wiring_shortlist_to_fit_summary(monkeypatch):
         lambda schema, tier="heavy": RunnableLambda(fake_confirm),
     )
     verdicts = [
-        FitVerdict(label="strong", reasons=["r0"], sources=[_url("Uni-0")]),
-        FitVerdict(label="reach", reasons=["r1"], sources=[_url("Uni-1")]),
+        FitVerdict(label="strong", reasons=["r0"], sources=[_url("Uni-0")], sufficient=True),
+        FitVerdict(label="reach", reasons=["r1"], sources=[_url("Uni-1")], sufficient=True),
     ]
     _wire(monkeypatch, verdicts)
 

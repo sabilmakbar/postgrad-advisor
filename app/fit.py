@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.model_layer import structured
 from app.prompts import FIT_INSTRUCTIONS, PERSONA
-from app.requirements_search import search_requirements
+from app.requirements_search import SearchResult, search_requirements
 from app.shortlist import degree_label, humanize_degree_text
 from app.state import FitLabel, InterviewState, ProgramFit
 
@@ -25,8 +25,8 @@ class FitVerdict(BaseModel):
     """LLM structured output for ONE program (AC 3)."""
 
     label: FitLabel = Field(
-        description="strong, borderline, or reach; unknown ONLY if the fetched "
-        "text contains no actual admission requirements."
+        description="strong, borderline, or reach when evidence is sufficient; "
+        "unknown when evidence is incomplete."
     )
     reasons: list[str] = Field(
         description="Each reason ties a specific CV fact to a specific fetched "
@@ -36,6 +36,16 @@ class FitVerdict(BaseModel):
         description="URLs copied EXACTLY from the fetched source list that "
         "support the reasons."
     )
+    sufficient: bool = Field(
+        description="Whether the evidence is sufficient for a grounded fit verdict."
+    )
+    missing_evidence: str | None = Field(
+        None, description="Short description of what evidence is missing."
+    )
+    reformulated_query: str | None = Field(
+        None,
+        description="One corrective query naming the same university and degree intent.",
+    )
 
 
 def _unknown(university: str, query: str, why: str) -> ProgramFit:
@@ -44,6 +54,61 @@ def _unknown(university: str, query: str, why: str) -> ProgramFit:
         label="unknown",
         reasons=[f'{why} (searched: "{query}")'],
         sources=[],
+    )
+
+
+def _unknown_attempts(university: str, queries: list[str], why: str) -> ProgramFit:
+    attempted = "; ".join(f'"{query}"' for query in queries)
+    return ProgramFit(
+        university=university,
+        label="unknown",
+        reasons=[f"{why} (searched: {attempted})"],
+        sources=[],
+    )
+
+
+def _normalized_words(text: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _same_program_query(query: str, university: str, degree: str) -> bool:
+    normalized = _normalized_words(query)
+    identity = f"{_normalized_words(university)} {_normalized_words(degree)}"
+    if normalized != identity and not normalized.startswith(f"{identity} "):
+        return False
+
+    degree_words = _normalized_words(degree)
+    conflicting = {
+        "phd": ("master", "mres", "mba"),
+        "taught master s": ("phd", "doctoral", "doctorate", "research master", "mres"),
+        "research master s": ("phd", "doctoral", "doctorate", "taught master", "mba"),
+    }[degree_words]
+    return not any(re.search(rf"\b{re.escape(term)}\b", normalized) for term in conflicting)
+
+
+def _combine(first: SearchResult, second: SearchResult) -> SearchResult:
+    sources = list(dict.fromkeys([*first.sources, *second.sources]))
+    sections = [
+        f'Query: "{result.query}"\n{result.text or "[no results]"}'
+        for result in (first, second)
+    ]
+    return SearchResult(query=second.query, text="\n\n".join(sections), sources=sources)
+
+
+def _judge(chain, cv: dict, entry, found: SearchResult, pass_name: str) -> FitVerdict:
+    return chain.invoke(
+        [
+            ("system", f"{PERSONA}\n\n{FIT_INSTRUCTIONS}"),
+            (
+                "human",
+                f"Evidence pass: {pass_name}.\n"
+                f"CV facts (user-confirmed): {cv}\n\n"
+                f"Program: {entry.university}, {entry.country} — "
+                f"{entry.rank_context}; {degree_label(entry.degree_type)}.\n\n"
+                f"Fetched requirements:\n{found.text or '[no results]'}\n\n"
+                f"Source URLs: {found.sources}",
+            ),
+        ]
     )
 
 
@@ -103,7 +168,7 @@ def fit_node(state: InterviewState) -> dict:
         "experience_months": facts.experience_months,
     }
     cv = {k: v for k, v in cv.items() if v is not None and v != []}
-    used = state.searches_used
+    used = min(max(state.searches_used, 0), MAX_SEARCHES)
     verdicts: list[ProgramFit] = []
     for entry in state.shortlist:
         query = f"{entry.university} {state.field} admission requirements"
@@ -118,25 +183,44 @@ def fit_node(state: InterviewState) -> dict:
             continue
         used += 1
         found = search_requirements(query)
-        if not found.text.strip():
+        judged = _judge(chain, cv, entry, found, "initial")
+        if judged.sufficient:
+            verdicts.append(_ground(entry.university, judged, found))
+            continue
+
+        missing = judged.missing_evidence or "admission evidence remains incomplete"
+        retry_query = judged.reformulated_query
+        if used >= MAX_SEARCHES:
+            verdicts.append(_unknown_attempts(entry.university, [query], missing))
+            continue
+        degree = degree_label(entry.degree_type)
+        if not retry_query or not _same_program_query(
+            retry_query, entry.university, degree
+        ):
             verdicts.append(
-                _unknown(entry.university, query, "no admission requirements found")
+                _unknown_attempts(
+                    entry.university,
+                    [query],
+                    f"{missing}; the proposed corrective query did not preserve "
+                    f"{entry.university} and {degree}",
+                )
             )
             continue
-        judged = chain.invoke(
-            [
-                ("system", f"{PERSONA}\n\n{FIT_INSTRUCTIONS}"),
-                (
-                    "human",
-                    f"CV facts (user-confirmed): {cv}\n\n"
-                    f"Program: {entry.university}, {entry.country} — "
-                    f"{entry.rank_context}; {degree_label(entry.degree_type)}.\n\n"
-                    f"Fetched requirements:\n{found.text}\n\n"
-                    f"Source URLs: {found.sources}",
-                ),
-            ]
-        )
-        verdicts.append(_ground(entry.university, judged, found))
+
+        used += 1
+        recovered = search_requirements(retry_query)
+        combined = _combine(found, recovered)
+        final = _judge(chain, cv, entry, combined, "corrective and final")
+        if final.sufficient:
+            verdicts.append(_ground(entry.university, final, combined))
+        else:
+            verdicts.append(
+                _unknown_attempts(
+                    entry.university,
+                    [query, retry_query],
+                    final.missing_evidence or "admission evidence remains incomplete",
+                )
+            )
     return {
         "fit_verdicts": verdicts,
         "searches_used": used,

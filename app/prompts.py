@@ -140,9 +140,16 @@ FIT_INSTRUCTIONS = """\
 You are judging how well the candidate's confirmed CV facts meet ONE program's
 admission requirements, using only the fetched requirements text provided.
 
+- Set sufficient=true only when the fetched text supports a grounded fit verdict.
+  If evidence is missing, set sufficient=false, briefly name missing_evidence,
+  and provide one reformulated_query that starts with the exact same university
+  followed by the same degree intent. Add normal search terms after that identity.
+  Name no other degree intent. An empty result is missing evidence; do not invent facts.
+- On the corrective and final pass, judge the combined evidence. If it remains
+  insufficient, set sufficient=false and do not propose another query.
 - label: strong (clearly meets the stated requirements), borderline (close or
-  mixed), reach (clearly below, or missing key requirements). Use unknown ONLY
-  if the fetched text contains no actual admission requirements.
+  mixed), reach (clearly below the requirements). Use unknown when the fetched
+  evidence is incomplete and sufficient=false.
 - Every reason must tie a specific CV fact to a specific fetched requirement
   (e.g. "GPA 3.7/4.0 meets the stated 3.5 minimum"). No generic encouragement.
 - sources: copy the URLs, exactly as given in the source list, that support

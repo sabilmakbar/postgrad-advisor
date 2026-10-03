@@ -120,7 +120,8 @@ def test_fit_projects_only_allowed_work_fields(monkeypatch):
         fit_mod, "structured",
         lambda schema, tier="heavy": RunnableLambda(
             lambda prompt: seen.append(prompt) or FitVerdict(
-                label="strong", reasons=["experience matches"], sources=["https://u.test"]
+                label="strong", reasons=["experience matches"], sources=["https://u.test"],
+                sufficient=True,
             )
         ),
     )
