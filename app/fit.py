@@ -16,6 +16,7 @@ from app.shortlist import degree_label, humanize_degree_text
 from app.state import FitLabel, InterviewState, ProgramFit
 
 MAX_SEARCHES = 12  # AD-3: per-conversation runtime-search cap, enforced here
+FIT_BATCH_SIZE = 5
 
 # AD-4 / SC-005: numeric admission odds in any spelling — "70%", "70 percent",
 # "chance(s) of 7 in 10".
@@ -138,7 +139,7 @@ def _ground(university: str, judged: FitVerdict, found) -> ProgramFit:
     )
 
 
-def _render(verdicts: list[ProgramFit]) -> str:
+def _render(verdicts: list[ProgramFit], pending: list[str]) -> str:
     lines = []
     for v in verdicts:
         reasons = "; ".join(humanize_degree_text(reason) for reason in v.reasons)
@@ -146,15 +147,17 @@ def _render(verdicts: list[ProgramFit]) -> str:
         if v.sources:
             line += f" (sources: {', '.join(v.sources)})"
         lines.append(line)
-    return (
+    rendered = (
         "Here is how your confirmed CV facts stack up against each shortlisted "
         "program:\n" + "\n".join(lines)
     )
+    if pending:
+        rendered += "\n\nPending assessment: " + ", ".join(pending)
+    return rendered
 
 
-def fit_node(state: InterviewState) -> dict:
-    """One search + one heavy-tier judgment per shortlisted program, within the
-    state's search budget; final summary rendered in code (AC 2-5)."""
+def fit_batch(state: InterviewState) -> dict:
+    """Assess at most five programs from the cursor within the shared budget."""
     chain = structured(FitVerdict, tier="heavy")
     facts = state.cv_facts
     cv = {
@@ -170,12 +173,15 @@ def fit_node(state: InterviewState) -> dict:
     }
     cv = {k: v for k, v in cv.items() if v is not None and v != []}
     used = min(max(state.searches_used, 0), MAX_SEARCHES)
-    verdicts: list[ProgramFit] = []
+    verdicts = list(getattr(state, "fit_verdicts", []))
+    cursor = min(max(getattr(state, "fit_cursor", 0), 0), len(state.shortlist))
     total = len(state.shortlist)
-    for position, entry in enumerate(state.shortlist, 1):
+    stop = min(cursor + FIT_BATCH_SIZE, total)
+    for position in range(cursor, stop):
+        entry = state.shortlist[position]
         try:
             get_stream_writer()(
-                f"searching requirements: {entry.university} ({position}/{total})"
+                f"searching requirements: {entry.university} ({position + 1}/{total})"
             )
         except Exception:
             pass
@@ -188,18 +194,21 @@ def fit_node(state: InterviewState) -> dict:
                     "this conversation's search budget is used up, so I won't guess",
                 )
             )
-            continue
+            cursor = position + 1
+            break
         used += 1
         found = search_requirements(query)
         judged = _judge(chain, cv, entry, found, "initial")
         if judged.sufficient:
             verdicts.append(_ground(entry.university, judged, found))
+            cursor = position + 1
             continue
 
         missing = judged.missing_evidence or "admission evidence remains incomplete"
         retry_query = judged.reformulated_query
         if used >= MAX_SEARCHES:
             verdicts.append(_unknown_attempts(entry.university, [query], missing))
+            cursor = position + 1
             continue
         degree = degree_label(entry.degree_type)
         if not retry_query or not _same_program_query(
@@ -213,6 +222,7 @@ def fit_node(state: InterviewState) -> dict:
                     f"{entry.university} and {degree}",
                 )
             )
+            cursor = position + 1
             continue
 
         used += 1
@@ -229,8 +239,16 @@ def fit_node(state: InterviewState) -> dict:
                     final.missing_evidence or "admission evidence remains incomplete",
                 )
             )
+        cursor = position + 1
+    pending = [entry.university for entry in state.shortlist[cursor:]]
     return {
         "fit_verdicts": verdicts,
         "searches_used": used,
-        "messages": state.messages + [("ai", _render(verdicts))],
+        "fit_cursor": cursor,
+        "fit_continue": None,
+        "messages": state.messages + [("ai", _render(verdicts, pending))],
     }
+
+
+# Kept for callers of the story-005 unit boundary; the graph uses ``fit_batch``.
+fit_node = fit_batch

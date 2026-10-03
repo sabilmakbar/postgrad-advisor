@@ -46,7 +46,7 @@ NODE_STATUS = {
     "cv_ask": "getting ready for your CV…",
     "cv_intake": "reading your CV…",
     "cv_confirm": "checking your CV details…",
-    "fit": "comparing your profile with each program…",
+    "fit_batch": "comparing your profile with each program…",
 }
 
 app = FastAPI()

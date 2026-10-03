@@ -149,6 +149,21 @@ def test_stream_humanizes_whole_and_every_split_degree_token(client):
     assert "phd" not in streamed
 
 
+def test_fit_continuation_prompt_streams_once_and_keeps_session_open(client):
+    states = [
+        SimpleNamespace(values={"messages": []}, next=("fit_batch",)),
+        SimpleNamespace(
+            values={"messages": [("ai", "Assess the next batch?")]},
+            next=("fit_more_decide",),
+        ),
+    ]
+
+    body = _start(client(FakeGraph((), states))).text
+
+    assert body.count("event: message\ndata: Assess the next batch?\n") == 1
+    assert body.rstrip().endswith("event: done\ndata:")
+
+
 def test_stream_humanizes_split_token_within_one_model_message(client):
     events = [
         ("messages", (AIMessageChunk(content="masters_", id="one-message"), {})),
@@ -239,12 +254,12 @@ def test_task_and_custom_statuses_are_ordered_and_not_message_text(client):
     events = [
         ("tasks", {"name": "shortlister"}),
         ("custom", "searching requirements: Test U (1/2)"),
-        ("tasks", {"name": "fit", "result": {}}),  # completion is not a start
+        ("tasks", {"name": "fit_batch", "result": {}}),  # completion is not a start
         ("messages", (AIMessageChunk(content="answer", id="a", chunk_position="last"), {})),
     ]
     states = [
         SimpleNamespace(values={"messages": []}, next=("shortlister",)),
-        SimpleNamespace(values={"messages": [],}, next=("fit",)),
+        SimpleNamespace(values={"messages": [],}, next=("fit_batch",)),
     ]
     body = _start(client(FakeGraph(events, states))).text
 

@@ -26,7 +26,7 @@ from app.cv import (
     render_interview_facts,
     split_upload,
 )
-from app.fit import fit_node
+from app.fit import MAX_SEARCHES, fit_node
 from app.model_layer import chat, structured
 from app.prompts import (
     CV_AFTER_CAP,
@@ -35,6 +35,7 @@ from app.prompts import (
     CV_PARSE_FAILED,
     CV_RECEIVED,
     FIRST_QUESTION,
+    FIT_MORE_PROMPT,
     FIXED_INTERVIEW_QUESTIONS,
     INTERVIEWER_INSTRUCTIONS,
     PARSER_INSTRUCTIONS,
@@ -264,6 +265,37 @@ def _route(state: InterviewState) -> str:
     return "interviewer"  # loop: awaits the next answer at interrupt()
 
 
+def _fit_batch_route(state: InterviewState) -> str:
+    if state.fit_cursor >= len(state.shortlist) or state.searches_used >= MAX_SEARCHES:
+        return END
+    return "fit_more_ask"
+
+
+def _fit_more_ask(state: InterviewState) -> dict:
+    return {"messages": state.messages + [("ai", FIT_MORE_PROMPT)]}
+
+
+def _fit_more_decide(state: InterviewState) -> dict:
+    answer = interrupt(state.messages[-1][1])
+    normalized = " ".join(str(answer).lower().strip().split())
+    if normalized in {"yes", "y", "continue", "please continue"}:
+        return {"fit_continue": True}
+    if normalized in {"no", "n", "stop", "no thanks", "no thank you"}:
+        return {"fit_continue": False}
+    return {
+        "fit_continue": None,
+        "messages": state.messages + [("ai", FIT_MORE_PROMPT)],
+    }
+
+
+def _fit_more_route(state: InterviewState) -> str:
+    if state.fit_continue is True:
+        return "fit_batch"
+    if state.fit_continue is False:
+        return END
+    return "fit_more_decide"
+
+
 def build_graph(checkpointer=None):
     """Compiled interview graph. ``interrupt()`` needs a checkpointer; defaults
     to in-memory (the web-chat story may pass its own)."""
@@ -273,7 +305,9 @@ def build_graph(checkpointer=None):
     g.add_node("cv_ask", cv_ask_node)
     g.add_node("cv_intake", cv_intake_node)
     g.add_node("cv_confirm", cv_confirm_node)
-    g.add_node("fit", fit_node)
+    g.add_node("fit_batch", fit_node)
+    g.add_node("fit_more_ask", _fit_more_ask)
+    g.add_node("fit_more_decide", _fit_more_decide)
     g.add_edge(START, "interviewer")
     g.add_conditional_edges("interviewer", _route, ["interviewer", "shortlister", END])
     # story 009 AC 4: the ask is its own superstep, so it is checkpointed before
@@ -288,8 +322,12 @@ def build_graph(checkpointer=None):
     )
     g.add_conditional_edges(  # story 009 AC 5: a new CV re-enters intake
         "cv_confirm",
-        lambda s: "cv_intake" if s.pending_cv else "fit" if s.cv_confirmed else "cv_confirm",
-        ["cv_intake", "cv_confirm", "fit"],
+        lambda s: "cv_intake" if s.pending_cv else "fit_batch" if s.cv_confirmed else "cv_confirm",
+        ["cv_intake", "cv_confirm", "fit_batch"],
     )
-    g.add_edge("fit", END)
+    g.add_conditional_edges("fit_batch", _fit_batch_route, ["fit_more_ask", END])
+    g.add_edge("fit_more_ask", "fit_more_decide")
+    g.add_conditional_edges(
+        "fit_more_decide", _fit_more_route, ["fit_batch", "fit_more_decide", END]
+    )
     return g.compile(checkpointer=checkpointer or InMemorySaver(serde=_SERDE))

@@ -21,8 +21,8 @@ import app.graph as graph_mod
 import app.model_layer as model_layer
 from app.cv import CVConfirmation, parse_cv
 from app.fit import _PROB_RE, MAX_SEARCHES, FitVerdict, fit_node
-from app.graph import build_graph
-from app.prompts import CV_REQUEST, CV_UNREADABLE
+from app.graph import _fit_batch_route, _fit_more_decide, _fit_more_route, build_graph
+from app.prompts import CV_REQUEST, CV_UNREADABLE, FIT_MORE_PROMPT
 from app.requirements_search import SearchResult
 from app.state import CVFacts, InterviewState, ShortlistEntry, SlotUpdate
 
@@ -222,8 +222,7 @@ def test_llm_unknown_still_shows_query(monkeypatch):
 
 
 def test_search_budget_enforced_in_code(monkeypatch):
-    # 15 programs, budget 12: exactly 12 searches; the rest are unknown with
-    # the budget named — counterpart in the same run: the first 12 DID search.
+    # One invocation assesses only the first five, independent of remaining budget.
     verdicts = [
         FitVerdict(
             label="borderline", reasons=[f"r{i}"], sources=[_url(f"Uni-{i}")],
@@ -234,12 +233,10 @@ def test_search_budget_enforced_in_code(monkeypatch):
     queries, judge_calls, _ = _wire(monkeypatch, verdicts)
 
     out = fit_node(_state(15))
-    assert len(queries) == MAX_SEARCHES == len(judge_calls)
-    assert out["searches_used"] == MAX_SEARCHES
-    over = out["fit_verdicts"][MAX_SEARCHES:]
-    assert [v.label for v in over] == ["unknown"] * 3
-    assert all("search budget" in v.reasons[0] for v in over)
-    assert [v.label for v in out["fit_verdicts"][:MAX_SEARCHES]] == ["borderline"] * 12
+    assert len(queries) == len(judge_calls) == 5
+    assert out["searches_used"] == out["fit_cursor"] == 5
+    assert [v.label for v in out["fit_verdicts"]] == ["borderline"] * 5
+    assert "Pending assessment: Uni-5" in out["messages"][-1][1]
 
 
 def test_budget_counter_carries_prior_use(monkeypatch):
@@ -251,7 +248,9 @@ def test_budget_counter_carries_prior_use(monkeypatch):
     out = fit_node(_state(3, searches_used=MAX_SEARCHES - 1))
     assert len(queries) == 1
     assert out["searches_used"] == MAX_SEARCHES
-    assert [v.label for v in out["fit_verdicts"]] == ["strong", "unknown", "unknown"]
+    assert [v.label for v in out["fit_verdicts"]] == ["strong", "unknown"]
+    assert out["fit_cursor"] == 2
+    assert "Pending assessment: Uni-2" in out["messages"][-1][1]
 
 
 def test_budget_counter_clamps_invalid_incoming_value(monkeypatch):
@@ -261,6 +260,49 @@ def test_budget_counter_clamps_invalid_incoming_value(monkeypatch):
     assert queries == [] and judge_calls == []
     assert out["searches_used"] == MAX_SEARCHES
     assert out["fit_verdicts"][0].label == "unknown"
+
+
+def test_batches_accumulate_in_order_without_duplicates(monkeypatch):
+    verdicts = [
+        FitVerdict(
+            label="strong", reasons=[f"r{i}"], sources=[_url(f"Uni-{i}")],
+            sufficient=True,
+        )
+        for i in range(8)
+    ]
+    queries, judge_calls, _ = _wire(monkeypatch, verdicts)
+
+    state = _state(8)
+    first = fit_node(state)
+    second = fit_node(state.model_copy(update=first))
+
+    assert first["fit_cursor"] == 5 and len(first["fit_verdicts"]) == 5
+    assert second["fit_cursor"] == 8 and len(second["fit_verdicts"]) == 8
+    assert [v.university for v in second["fit_verdicts"]] == [f"Uni-{i}" for i in range(8)]
+    assert len(queries) == len(judge_calls) == 8
+    assert "Pending assessment" not in second["messages"][-1][1]
+
+
+@pytest.mark.parametrize(
+    ("answer", "choice", "route"),
+    [("yes", True, "fit_batch"), ("no thanks", False, "__end__"), ("maybe", None, "fit_more_decide")],
+)
+def test_fit_continuation_is_parsed_in_code(monkeypatch, answer, choice, route):
+    monkeypatch.setattr(graph_mod, "interrupt", lambda prompt: answer)
+    state = _state(6, messages=[("ai", FIT_MORE_PROMPT)])
+
+    out = _fit_more_decide(state)
+    merged = state.model_copy(update=out)
+
+    assert out["fit_continue"] is choice
+    assert _fit_more_route(merged) == route
+    if choice is None:
+        assert out["messages"][-1] == ("ai", FIT_MORE_PROMPT)
+
+
+def test_no_continuation_after_final_or_budget_exhausted_batch():
+    assert _fit_batch_route(_state(5, fit_cursor=5)) == "__end__"
+    assert _fit_batch_route(_state(8, fit_cursor=5, searches_used=MAX_SEARCHES)) == "__end__"
 
 
 # --- bounded evidence recovery (story 016) ----------------------------------
@@ -457,7 +499,7 @@ def test_graph_wiring_shortlist_to_fit_summary(monkeypatch):
         "shortlist_node",
         lambda state: {
             "handed_off": True,
-            "shortlist": [_entry(0), _entry(1)],
+            "shortlist": [_entry(i) for i in range(7)],
             "messages": state.messages + [("ai", "shortlist")],
         },
     )
@@ -478,8 +520,11 @@ def test_graph_wiring_shortlist_to_fit_summary(monkeypatch):
         lambda schema, tier="heavy": RunnableLambda(fake_confirm),
     )
     verdicts = [
-        FitVerdict(label="strong", reasons=["r0"], sources=[_url("Uni-0")], sufficient=True),
-        FitVerdict(label="reach", reasons=["r1"], sources=[_url("Uni-1")], sufficient=True),
+        FitVerdict(
+            label="strong" if i < 5 else "reach",
+            reasons=[f"r{i}"], sources=[_url(f"Uni-{i}")], sufficient=True,
+        )
+        for i in range(7)
     ]
     _wire(monkeypatch, verdicts)
 
@@ -500,9 +545,16 @@ def test_graph_wiring_shortlist_to_fit_summary(monkeypatch):
     assert "3.8 / 4.0" in state["__interrupt__"][0].value  # corrected re-echo
 
     state = g.invoke(Command(resume="yes, correct"), cfg)
+    assert state["__interrupt__"][0].value == FIT_MORE_PROMPT
+    assert len(state["fit_verdicts"]) == 5
+    assert "Pending assessment: Uni-5, Uni-6" in state["messages"][-2][1]
+
+    state = g.invoke(Command(resume="maybe"), cfg)
+    assert state["__interrupt__"][0].value == FIT_MORE_PROMPT
+    state = g.invoke(Command(resume="yes"), cfg)
     assert "__interrupt__" not in state
-    assert [v.label for v in state["fit_verdicts"]] == ["strong", "reach"]
-    assert state["searches_used"] == 2
+    assert [v.label for v in state["fit_verdicts"]] == ["strong"] * 5 + ["reach"] * 2
+    assert state["searches_used"] == 7 and state["fit_cursor"] == 7
     role, summary = state["messages"][-1]
-    assert role == "ai" and "Uni-0: strong" in summary and _url("Uni-1") in summary
+    assert role == "ai" and "Uni-0: strong" in summary and _url("Uni-6") in summary
     assert not _PROB_RE.search(summary)

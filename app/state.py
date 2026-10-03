@@ -84,6 +84,8 @@ class InterviewState(BaseModel):
     cv_confirmed: bool = False  # story 005: set once the user confirms the echo
     searches_used: int = 0  # story 005: runtime-search budget counter (AD-3, <=12)
     fit_verdicts: list[ProgramFit] = []  # story 005: built by the fit node
+    fit_cursor: int = 0  # next shortlist entry to assess (story 020)
+    fit_continue: bool | None = None  # parsed continuation choice (story 020)
 
     def is_complete(self) -> bool:
         return bool(self.degree_intent and self.field and self.target_regions)

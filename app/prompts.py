@@ -155,6 +155,8 @@ admission requirements, using only the fetched requirements text provided.
 - Stay realistic per your persona: name gaps plainly, and for a reach verdict
   say what would realistically close the gap."""
 
+FIT_MORE_PROMPT = "Would you like me to assess the next batch of programs? Please answer yes or no."
+
 TURN_CAP_MESSAGE = (
     "We've reached this interview's question limit and, realistically, I still "
     "don't know enough to recommend well — I need your degree intent, field, "
