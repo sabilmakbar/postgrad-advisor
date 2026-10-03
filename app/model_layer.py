@@ -9,6 +9,8 @@ unconfigured light tier) degrades to heavy with a logged notice.
 """
 
 import logging
+from time import monotonic
+from uuid import UUID
 
 import google.genai.errors as google_errors
 import groq
@@ -23,6 +25,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.constants import TAG_NOSTREAM
 from langgraph.config import get_stream_writer
 
+from app import tracing
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -88,10 +91,20 @@ def _emit_status(text: str) -> None:
 class _AttemptStatus(BaseCallbackHandler):
     """Report provider transitions without retaining state between runs."""
 
-    def __init__(self, provider_position: int):
+    def __init__(
+        self,
+        provider_position: int,
+        provider: str = "unknown",
+        model: str = "unknown",
+    ):
         self.provider_position = provider_position
+        self.provider = provider
+        self.model = model
+        self._started: dict[UUID, tuple[float, dict, tracing.TraceContext | None]] = {}
 
-    def on_chat_model_start(self, serialized, messages, *, tags=None, **kwargs):
+    def on_chat_model_start(
+        self, serialized, messages, *, tags=None, run_id=None, **kwargs
+    ):
         attempt = next(
             (
                 int(tag.rsplit(":", 1)[1])
@@ -104,6 +117,87 @@ class _AttemptStatus(BaseCallbackHandler):
             _emit_status("model busy, retrying")
         elif self.provider_position > 0:
             _emit_status("model unavailable, trying the backup")
+        operation = tracing.current_model_operation()
+        if operation is None or run_id is None:
+            return
+        cause = (
+            "retry" if attempt > 1 else "fallback" if self.provider_position > 0
+            else operation.cause
+        )
+        event = {
+            "event": "provider_attempt",
+            "logical_operation_id": operation.logical_operation_id,
+            "tier_operation_id": operation.tier_operation_id,
+            "attempt_index": attempt,
+            "provider": self.provider,
+            "model": self.model,
+            "operation": operation.operation,
+            "tier": operation.tier,
+            "cause": cause,
+        }
+        self._started[run_id] = (monotonic(), event, tracing.current_context())
+
+    def _finish(self, run_id, outcome: str, value=None):
+        started = self._started.pop(run_id, None)
+        if started is None:
+            return
+        began, event, context = started
+        message = value
+        generations = getattr(value, "generations", None)
+        if generations and generations[0]:
+            message = getattr(generations[0][0], "message", value)
+        response_metadata = getattr(message, "response_metadata", {}) or {}
+        usage = getattr(message, "usage_metadata", None)
+        response = getattr(value, "response", None)
+        headers = (
+            response_metadata.get("headers", {})
+            or getattr(response, "headers", {})
+            or {}
+        )
+        tracing.write(
+            {
+                **event,
+                "duration_ms": tracing.elapsed(began),
+                "outcome": outcome,
+                "token_usage": usage,
+                "http_status": response_metadata.get("status_code")
+                or getattr(value, "status_code", None)
+                or getattr(response, "status_code", None),
+                "remaining_requests": headers.get("x-ratelimit-remaining-requests"),
+                "remaining_tokens": headers.get("x-ratelimit-remaining-tokens"),
+                "request_reset": headers.get("x-ratelimit-reset-requests"),
+                "token_reset": headers.get("x-ratelimit-reset-tokens"),
+            },
+            context,
+        )
+
+    def on_llm_end(self, response, *, run_id=None, **kwargs):
+        self._finish(run_id, "success", response)
+
+    def on_llm_error(self, error, *, run_id=None, **kwargs):
+        self._finish(run_id, "error", error)
+
+
+def _identity(model: Runnable, position: int) -> tuple[str, str]:
+    identity_model = model
+    for _ in range(3):
+        nested = getattr(identity_model, "bound", None) or getattr(
+            identity_model, "first", None
+        )
+        if nested is None:
+            break
+        identity_model = nested
+    provider = {
+        "ChatGoogleGenerativeAI": "google",
+        "ChatGroq": "groq",
+        "ChatOpenAI": "workers_ai",
+    }.get(
+        type(identity_model).__name__, f"provider_{position}"
+    )
+    model_id = getattr(identity_model, "model", None) or getattr(
+        identity_model, "model_name", None
+    )
+    return provider, str(model_id or type(identity_model).__name__)
 
 # Free-tier RPM quotas are PER MODEL: one shared limiter per (provider, model id),
 # so every chain built in this process draws from the same budget.
@@ -280,7 +374,9 @@ def _compose(
     `jitter_params` exists so tests can shrink the backoff waits.
     """
     retried = [
-        m.with_config(callbacks=[_AttemptStatus(position)]).with_retry(
+        m.with_config(
+            callbacks=[_AttemptStatus(position, *_identity(m, position))]
+        ).with_retry(
             retry_if_exception_type=transient,
             stop_after_attempt=settings.model_attempts,
             exponential_jitter_params=jitter_params,
@@ -291,8 +387,21 @@ def _compose(
 
     # ponytail: sync invoke only; add stream/async passthrough when the chat UI story needs it
     def _invoke(value, config: RunnableConfig | None = None):
+        metadata = (config or {}).get("metadata", {})
+        operation = tracing.ModelOperation(
+            metadata.get("trace_operation", "model"),
+            metadata.get("trace_tier", "unknown"),
+            logical_operation_id=metadata.get(
+                "trace_logical_operation_id", tracing.operation_id()
+            ),
+            tier_operation_id=metadata.get(
+                "trace_tier_operation_id", tracing.operation_id()
+            ),
+            cause=metadata.get("trace_cause"),
+        )
         try:
-            return chain.invoke(value, config)
+            with tracing.model_operation(operation):
+                return chain.invoke(value, config)
         except Exception as e:
             raise AllProvidersExhausted(
                 "All model providers failed after retries. Check the API keys in "
@@ -303,7 +412,7 @@ def _compose(
     return RunnableLambda(_invoke)
 
 
-def _tier_chain(tier: str, prepare) -> Runnable:
+def _tier_chain(tier: str, prepare, operation_name: str) -> Runnable:
     """Route a tier through the single `_compose` seam.
 
     `prepare` maps the raw model list to the composed one (identity for chat,
@@ -314,8 +423,31 @@ def _tier_chain(tier: str, prepare) -> Runnable:
     if tier not in ("heavy", "light"):
         raise ValueError(f"unknown tier {tier!r}; use 'light' or 'heavy'")
 
-    def heavy() -> Runnable:
-        return _compose(prepare(_build_models("heavy")))
+    def heavy(cause=None) -> Runnable:
+        chain = _compose(prepare(_build_models("heavy")))
+
+        def _invoke(value, config: RunnableConfig | None = None):
+            metadata = (config or {}).get("metadata", {})
+            operation = tracing.ModelOperation(
+                operation_name,
+                "heavy",
+                tier_operation_id=metadata.get(
+                    "trace_tier_operation_id", tracing.operation_id()
+                ),
+                cause=cause,
+            )
+            config = dict(config or {})
+            config["metadata"] = {
+                **config.get("metadata", {}),
+                "trace_operation": operation.operation,
+                "trace_tier": operation.tier,
+                "trace_logical_operation_id": operation.logical_operation_id,
+                "trace_tier_operation_id": operation.tier_operation_id,
+                "trace_cause": operation.cause,
+            }
+            return chain.invoke(value, config)
+
+        return RunnableLambda(_invoke)
 
     if tier == "heavy":
         return heavy()
@@ -326,23 +458,36 @@ def _tier_chain(tier: str, prepare) -> Runnable:
             "light tier has no usable model ids; degrading to the heavy chain"
         )
         _emit_status("light model unavailable, trying the full model")
-        return heavy()
+        return heavy("degradation")
     light_chain = _compose(prepare(light_models))
 
     def _invoke(value, config: RunnableConfig | None = None):
+        tier_operation_id = tracing.operation_id()
+        operation = tracing.ModelOperation(
+            operation_name, "light", tier_operation_id=tier_operation_id
+        )
         try:
+            config = dict(config or {})
+            config["metadata"] = {
+                **config.get("metadata", {}),
+                "trace_operation": operation.operation,
+                "trace_tier": operation.tier,
+                "trace_logical_operation_id": operation.logical_operation_id,
+                "trace_tier_operation_id": operation.tier_operation_id,
+                "trace_cause": operation.cause,
+            }
             return light_chain.invoke(value, config)
         except AllProvidersExhausted:
             logger.warning("light tier exhausted; degrading to the heavy chain")
             _emit_status("light model unavailable, trying the full model")
-            return heavy().invoke(value, config)
+            return heavy("degradation").invoke(value, config)
 
     return RunnableLambda(_invoke)
 
 
 def chat(tier: str = "heavy") -> Runnable:
     """Plain chat chain across the tier's configured providers."""
-    return _tier_chain(tier, lambda models: models)
+    return _tier_chain(tier, lambda models: models, "chat")
 
 
 def structured(schema, tier: str = "heavy") -> Runnable:
@@ -355,5 +500,7 @@ def structured(schema, tier: str = "heavy") -> Runnable:
     *options*, never in the run metadata that stream filters can see, so
     downstream filtering alone cannot identify these runs)."""
     return _tier_chain(
-        tier, lambda models: [(m.with_structured_output(schema), t) for m, t in models]
+        tier,
+        lambda models: [(m.with_structured_output(schema), t) for m, t in models],
+        "structured",
     ).with_config(tags=[TAG_NOSTREAM])

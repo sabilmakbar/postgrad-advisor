@@ -13,6 +13,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from time import monotonic
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -20,6 +21,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from langchain_core.messages import AIMessageChunk
 from langgraph.types import Command
 
+from app import tracing
 from app.config import CV_DIR, ROOT
 from app.graph import build_graph
 from app.model_layer import AllProvidersExhausted
@@ -127,6 +129,7 @@ async def _turn(payload, config: dict, seen: int):
     interrupts: list[str] = []
     degree_streams: dict[str, _DegreeTokenStream] = {}
     active_message: str | None = None
+    nodes: dict[str, tuple[float, str, str]] = {}
 
     def flush(message_id: str | None = None) -> list[str]:
         ids = [message_id] if message_id is not None else list(degree_streams)
@@ -136,6 +139,20 @@ async def _turn(payload, config: dict, seen: int):
                 if tail := stream.finish():
                     tails.append(tail)
         return tails
+
+    def fail_open_nodes() -> None:
+        for task_id, (began, node_id, name) in list(nodes.items()):
+            tracing.write(
+                {
+                    "event": "graph_node",
+                    "node_operation_id": node_id,
+                    "node": name,
+                    "phase": "finish",
+                    "duration_ms": tracing.elapsed(began),
+                    "outcome": "failure",
+                }
+            )
+            nodes.pop(task_id)
 
     try:
         async for mode, data in GRAPH.astream(
@@ -172,6 +189,35 @@ async def _turn(payload, config: dict, seen: int):
                 if "__interrupt__" in data:
                     interrupts += [i.value for i in data["__interrupt__"]]
             elif mode == "tasks":
+                if isinstance(data, dict) and (name := data.get("name")):
+                    task_id = str(data.get("id") or name)
+                    if "result" not in data and "error" not in data:
+                        node_id = tracing.operation_id()
+                        nodes[task_id] = (monotonic(), node_id, name)
+                        tracing.write(
+                            {
+                                "event": "graph_node",
+                                "node_operation_id": node_id,
+                                "node": name,
+                                "phase": "start",
+                                "duration_ms": None,
+                                "outcome": None,
+                            }
+                        )
+                    elif started := nodes.pop(task_id, None):
+                        began, node_id, _ = started
+                        tracing.write(
+                            {
+                                "event": "graph_node",
+                                "node_operation_id": node_id,
+                                "node": name,
+                                "phase": "finish",
+                                "duration_ms": tracing.elapsed(began),
+                                "outcome": (
+                                    "failure" if "error" in data else "success"
+                                ),
+                            }
+                        )
                 if (
                     isinstance(data, dict)
                     and "result" not in data
@@ -184,6 +230,7 @@ async def _turn(payload, config: dict, seen: int):
         for tail in flush():
             yield _sse("token", tail)
     except AllProvidersExhausted as exc:
+        fail_open_nodes()
         for tail in flush():
             yield _sse("token", tail)
         kind = exc.kind if exc.kind in ERROR_MESSAGES else "unknown"
@@ -191,10 +238,11 @@ async def _turn(payload, config: dict, seen: int):
             "error", json.dumps({"kind": kind, "message": ERROR_MESSAGES[kind]})
         )
         return
-    except Exception:  # AC 4: the page never sees a stack trace
+    except Exception:  # AC 4: neither page nor logs retain candidate content
+        fail_open_nodes()
         for tail in flush():
             yield _sse("token", tail)
-        logger.exception("graph turn failed")
+        logger.warning("graph turn failed")
         yield _sse(
             "error",
             json.dumps({"kind": "unknown", "message": ERROR_MESSAGES["unknown"]}),
@@ -204,12 +252,14 @@ async def _turn(payload, config: dict, seen: int):
     new = [t for role, t in snapshot.values.get("messages", [])[seen:] if role == "ai"]
     for text in new:
         if _internal_json(text):  # parser output never replays to the user
-            logger.warning("dropped internal JSON from the chat replay: %.100s", text)
+            logger.warning("dropped internal JSON from the chat replay")
             continue
         yield _sse("message", text)
     for value in interrupts:  # a pause whose prompt isn't in messages yet (CV ask)
         if value not in new and not _internal_json(value):
             yield _sse("message", value)
+    if not snapshot.next:
+        tracing.conversation_summary()
     yield _sse("done", "" if snapshot.next else "over")
 
 
@@ -222,12 +272,13 @@ def _queued_turn(sid: str, payload, config: dict, seen: int):
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
     async def produce():
-        try:
-            async for event in _turn(payload, config, seen):
-                await queue.put(event)
-        finally:
-            _active_turns.pop(sid, None)
-            await queue.put(None)
+        with tracing.request_context(sid):
+            try:
+                async for event in _turn(payload, config, seen):
+                    await queue.put(event)
+            finally:
+                _active_turns.pop(sid, None)
+                await queue.put(None)
 
     task = asyncio.create_task(produce())
     _active_turns[sid] = task

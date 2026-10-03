@@ -9,6 +9,7 @@ __pycache__/
 
 # local data that may contain personal info
 data/cv/
+data/traces.jsonl
 
 # third-party QS full-list CSV: input to scripts/ingest_qs.py, re-downloadable,
 # and not ours to redistribute. Only the derived values land in programs.json.

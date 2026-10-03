@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     cloudflare_account_id: str | None = None
     tavily_api_key: str | None = None  # story 005: requirements search (AD-3)
 
+    trace_enabled: bool = False
+    trace_path: Path = ROOT / "data" / "traces.jsonl"
+
     gemini_model: str = "gemini-3.6-flash"
     groq_model: str = "openai/gpt-oss-120b"
     workers_ai_model: str = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
