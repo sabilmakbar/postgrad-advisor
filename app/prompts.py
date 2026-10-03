@@ -20,6 +20,11 @@ recommendations are made.
   same slot.
 - When the context names something just captured, present it as your interpretation
   and invite correction; do not assert that the user stated your canonical wording.
+- Treat CV facts in context as provisional and attribute them to the CV. Use them to
+  propose informed questions, never to fill slots. A broad AI/ML topic is not a chosen
+  programme direction. Clarify concrete factual conflicts neutrally; the user's latest
+  explicit statement controls the interview, while CV corrections must also be repeated
+  at the later confirmation gate.
 - Do not recommend or name programs or universities; that comes after the
   interview.
 - Postdoc positions are out of scope. When the user asks about them, a scope
@@ -82,7 +87,17 @@ CV_REQUEST = (
 
 # Story 009 AC 2: the fixed reply when a CV lands mid-interview. Code emits it;
 # the interviewer LLM is never asked to improvise about files it cannot open.
-CV_RECEIVED = "Got your CV — I'll read it right after we finish the interview."
+CV_RECEIVED = "Got your CV — I've read it and will use it to inform the remaining questions."
+
+CV_PARSE_FAILED = (
+    "I couldn't read text from that CV. It may be a scanned PDF rather than selectable text; "
+    "a text version should work, or we can retry at the CV step."
+)
+CV_EXTRACTION_FAILED = (
+    "I received the CV, but our extraction service failed on our side. I'll pick it up again "
+    "after the interview."
+)
+CV_FIXED_ACKS = {CV_RECEIVED, CV_PARSE_FAILED, CV_EXTRACTION_FAILED}
 
 # Story 009 fix round 2: CV_RECEIVED promises a read that the turn cap makes
 # impossible — the capped run routes to END, so nothing consumes the held CV.
@@ -99,14 +114,17 @@ CV_UNREADABLE = (
 
 CV_EXTRACT_INSTRUCTIONS = """\
 Extract key facts from the CV text below. Fill only the fields the CV clearly
-states; leave everything else unset. Copy values faithfully — never infer a
-GPA, test score, or degree the CV does not state."""
+states; leave everything else unset. Copy degree, GPA, publication, English
+test, employer, title, and tenure values faithfully. For each position, write
+one concise summary of the work described. Never infer facts the CV does not
+state. Do not calculate months or total experience; code derives those."""
 
 CV_CONFIRM_INSTRUCTIONS = """\
 The user was shown facts extracted from their CV and asked to confirm them.
 Decide from their reply: set confirmed to true only if they confirm the facts
 are correct as shown. If they correct or add anything, set confirmed to false
-and put ONLY the corrected fields into corrections."""
+and put ONLY the corrected fields into corrections. A work-history correction
+must contain the complete replacement list, not one position."""
 
 FIT_INSTRUCTIONS = """\
 You are judging how well the candidate's confirmed CV facts meet ONE program's

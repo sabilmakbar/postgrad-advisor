@@ -21,13 +21,16 @@ from app.cv import CVConfirmation, split_upload
 from app.graph import build_graph
 from app.prompts import (
     CV_AFTER_CAP,
+    CV_EXTRACTION_FAILED,
+    CV_PARSE_FAILED,
     CV_RECEIVED,
     CV_REQUEST,
     CV_UNREADABLE,
     FIRST_QUESTION,
     TURN_CAP_MESSAGE,
 )
-from app.state import CVFacts, SlotUpdate
+from app.model_layer import AllProvidersExhausted
+from app.state import CVFacts, SlotUpdate, WorkExperience
 
 FIXTURE = Path(__file__).parent / "fixtures" / "cv.txt"
 COMPLETE = SlotUpdate(degree_intent="phd", field="machine learning", target_regions=["UK"])
@@ -62,7 +65,7 @@ def _upload(cv_dir, name="deadbeef.txt", readable=True):
     return str(dest)
 
 
-def _wire(monkeypatch, questions=(), parses=(), facts=(), confirms=(), seen=None):
+def _wire(monkeypatch, questions=(), parses=(), facts=(), confirms=(), seen=None, chat_seen=None):
     """Scripted fakes for every model call the CV path can make, plus stubs for
     the shortlister and fit nodes (covered by their own tests).
 
@@ -77,8 +80,13 @@ def _wire(monkeypatch, questions=(), parses=(), facts=(), confirms=(), seen=None
             seen.append(prompt)
         return next(p)
 
+    def _chat(prompt):
+        if chat_seen is not None:
+            chat_seen.append(prompt)
+        return AIMessage(content=next(q))
+
     monkeypatch.setattr(
-        graph_mod, "chat", lambda tier="heavy": RunnableLambda(lambda _: AIMessage(content=next(q)))
+        graph_mod, "chat", lambda tier="heavy": RunnableLambda(_chat)
     )
     monkeypatch.setattr(
         graph_mod, "structured", lambda schema, tier="heavy": RunnableLambda(_parse)
@@ -159,13 +167,14 @@ def test_upload_mid_interview_is_intercepted_in_code(monkeypatch, cv_dir):
     """AC 2: the path is stored, answered with the fixed line, and the interview
     carries on. `parses=()` is the proof that no LLM saw it — a slot-parser call
     would raise StopIteration."""
-    _wire(monkeypatch, questions=(), parses=())
+    _wire(monkeypatch, questions=(), parses=(), facts=[FIRST_FACTS, SECOND_FACTS])
     path = _upload(cv_dir)
     g = build_graph()
     g.invoke({}, _thread())
     state = g.invoke(Command(resume=path), _thread())
 
     assert state["pending_cv"] == path
+    assert state["cv_facts"].degree == "BSc Computer Science"
     # fix round 2: the acknowledgement alone — the open question is already in
     # the log right above it and is not restated
     assert state["messages"][-2:] == [("ai", FIRST_QUESTION), ("ai", CV_RECEIVED)]
@@ -177,6 +186,7 @@ def test_upload_mid_interview_is_intercepted_in_code(monkeypatch, cv_dir):
     again = _upload(cv_dir, "cafebabe.txt")
     state = g.invoke(Command(resume=again), _thread())
     assert state["pending_cv"] == again
+    assert state["cv_facts"].degree == "MSc Computer Science"
     assert state["messages"][-2:] == [("ai", FIRST_QUESTION), ("ai", CV_RECEIVED)]
 
 
@@ -190,6 +200,7 @@ def test_the_answer_after_an_upload_is_parsed_against_the_open_question(
         monkeypatch,
         questions=["Q2"],
         parses=[SlotUpdate(degree_intent="phd")],
+        facts=[FIRST_FACTS],
         seen=seen,
     )
     g = build_graph()
@@ -207,13 +218,14 @@ def test_a_second_path_in_one_message_never_reaches_the_llm_or_the_log(
     """Fix round 2: only the first upload-shaped line is the attachment; the
     rest are dropped, not passed on as the typed remainder. `parses=()` proves
     no slot-parser call happened — a path as an 'answer' is the live incident."""
-    _wire(monkeypatch, questions=(), parses=())
+    _wire(monkeypatch, questions=(), parses=(), facts=[FIRST_FACTS])
     first, second = _upload(cv_dir, "one.txt"), _upload(cv_dir, "two.txt")
     g = build_graph()
     g.invoke({}, _thread())
     state = g.invoke(Command(resume=f"{first}\n{second}"), _thread())
 
     assert state["pending_cv"] == first
+    assert state["cv_facts"].degree == "BSc Computer Science"
     assert not any(second in text for _, text in state["messages"])
     assert state["messages"][-1] == ("ai", CV_RECEIVED)
 
@@ -281,6 +293,7 @@ def test_text_sent_with_an_upload_is_answered_and_the_cv_held(monkeypatch, cv_di
         monkeypatch,
         questions=["Q2"],
         parses=[SlotUpdate(degree_intent="phd")],
+        facts=[FIRST_FACTS],
         seen=seen,
     )
     path = _upload(cv_dir)
@@ -290,6 +303,7 @@ def test_text_sent_with_an_upload_is_answered_and_the_cv_held(monkeypatch, cv_di
 
     assert state["degree_intent"] == "phd"  # the typed part counted as an answer
     assert state["pending_cv"] == path  # and the CV is still held for intake
+    assert state["cv_facts"].degree == "BSc Computer Science"
     assert ("human", "a PhD, please") in state["messages"]
     assert _ai(state)[-2:] == [CV_RECEIVED, "Q2"]  # ack AND the next question
     assert not any(path in text for _, text in state["messages"])  # path stays out
@@ -447,6 +461,166 @@ def test_plain_confirmation_still_reaches_fit(monkeypatch, cv_dir):
     assert state["cv_confirmed"] is True
     assert state["messages"][-1] == ("ai", "VERDICTS")
     assert "__interrupt__" not in state  # run over: the page will see done/over
+
+
+# --- story 011: early extraction informs the interview ---------------------
+
+
+def test_cv_facts_reach_runtime_context_but_not_transcript(monkeypatch, cv_dir):
+    facts = CVFacts(
+        degree="BSc Mathematics",
+        publications=["Paper A"],
+        experience=[WorkExperience(
+            employer="Acme", title="Data Scientist", tenure="2 yrs", summary="Built NLP models"
+        )],
+    )
+    chat_seen = []
+    _wire(
+        monkeypatch,
+        questions=["Q2"],
+        parses=[SlotUpdate(degree_intent="phd")],
+        facts=[facts],
+        chat_seen=chat_seen,
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    g.invoke(Command(resume=_upload(cv_dir)), _thread())
+    state = g.invoke(Command(resume="a PhD"), _thread())
+
+    prompt = chat_seen[0][-1][1]
+    assert "BSc Mathematics" in prompt and "Built NLP models" in prompt
+    assert "attribute them to the CV" in prompt
+    assert "broad topic such as AI or machine learning is not" in prompt
+    assert "latest explicit user clarification controls" in prompt
+    assert not any("Built NLP models" in text for _, text in state["messages"])
+    assert state.get("field") is None  # CV facts never fill a slot
+    assert state["cv_facts"].degree == "BSc Mathematics"  # clarification parsing does not mutate it
+
+
+def test_threads_without_upload_get_no_cv_context(monkeypatch):
+    chat_seen = []
+    _wire(
+        monkeypatch,
+        questions=["Q2"],
+        parses=[SlotUpdate(degree_intent="phd")],
+        chat_seen=chat_seen,
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    g.invoke(Command(resume="a PhD"), _thread())
+    context = chat_seen[0][-1][1]
+    assert "Your CV provisionally reads" not in context
+    assert "A CV arrived but" not in context
+
+
+def test_user_answer_not_cv_selects_the_field(monkeypatch, cv_dir):
+    facts = CVFacts(degree="BSc Mathematics")
+    _wire(
+        monkeypatch,
+        questions=["Q2"],
+        parses=[SlotUpdate(field="machine learning")],
+        facts=[facts],
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    before = g.invoke(Command(resume=_upload(cv_dir)), _thread())
+    assert before.get("field") is None
+    after = g.invoke(Command(resume="AI and machine learning"), _thread())
+    assert after["field"] == "machine learning"
+    assert after["cv_facts"].degree == "BSc Mathematics"
+
+
+def test_parse_and_extraction_failures_name_the_correct_cause(monkeypatch, cv_dir):
+    chat_seen = []
+    _wire(
+        monkeypatch,
+        questions=["Q2"],
+        parses=[SlotUpdate(degree_intent="phd")],
+        chat_seen=chat_seen,
+    )
+    monkeypatch.setattr(graph_mod, "parse_cv", lambda path: (_ for _ in ()).throw(ValueError("bad")))
+    g = build_graph()
+    g.invoke({}, _thread())
+    state = g.invoke(Command(resume=_upload(cv_dir)), _thread())
+    assert state["messages"][-1] == ("ai", CV_PARSE_FAILED)
+    assert CV_EXTRACTION_FAILED not in _ai(state)
+    g.invoke(Command(resume="a PhD"), _thread())
+    held_context = chat_seen[0][-1][1]
+    assert "A CV arrived but is not readable or has not been read" in held_context
+    assert "Your CV provisionally reads" not in held_context
+
+    for thread, error in (
+        ("provider", AllProvidersExhausted("down")),
+        ("validation", RuntimeError("unexpected client failure")),
+    ):
+        _wire(monkeypatch)
+        monkeypatch.setattr(graph_mod, "parse_cv", lambda path: "text")
+        monkeypatch.setattr(
+            graph_mod, "extract_facts",
+            lambda text, error=error: (_ for _ in ()).throw(error),
+        )
+        g = build_graph()
+        cfg = {"configurable": {"thread_id": thread}}
+        g.invoke({}, cfg)
+        state = g.invoke(Command(resume=_upload(cv_dir, f"{thread}.txt")), cfg)
+        assert state["messages"][-1] == ("ai", CV_EXTRACTION_FAILED)
+        assert CV_PARSE_FAILED not in _ai(state)
+
+
+def test_second_upload_always_gets_its_own_message(monkeypatch, cv_dir):
+    calls = iter([ValueError("bad"), "text"])
+
+    def parse(path):
+        result = next(calls)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    _wire(monkeypatch, facts=[FIRST_FACTS])
+    monkeypatch.setattr(graph_mod, "parse_cv", parse)
+    g = build_graph()
+    g.invoke({}, _thread())
+    g.invoke(Command(resume=_upload(cv_dir, "bad.txt")), _thread())
+    state = g.invoke(Command(resume=_upload(cv_dir, "good.txt")), _thread())
+    assert _ai(state)[-2:] == [CV_PARSE_FAILED, CV_RECEIVED]
+
+
+def test_attachment_only_at_cap_extracts_but_mixed_capped_turn_does_not(monkeypatch, cv_dir):
+    calls = []
+    g = _at_the_turn_cap(monkeypatch, cv_dir)
+    monkeypatch.setattr(graph_mod, "extract_facts", lambda text: calls.append(text) or FIRST_FACTS)
+    state = g.invoke(Command(resume=_upload(cv_dir, "alone.txt")), _thread())
+    assert len(calls) == 1 and state["messages"][-1] == ("ai", CV_RECEIVED)
+
+    calls.clear()
+    g = _at_the_turn_cap(monkeypatch, cv_dir)
+    monkeypatch.setattr(graph_mod, "extract_facts", lambda text: calls.append(text) or FIRST_FACTS)
+    state = g.invoke(Command(resume="still vague\n" + _upload(cv_dir, "mixed.txt")), _thread())
+    assert calls == []
+    assert _ai(state)[-2:] == [CV_AFTER_CAP, TURN_CAP_MESSAGE]
+    assert CV_RECEIVED not in _ai(state)
+
+
+def test_mid_interview_parse_skips_intake_then_replacement_reparses(monkeypatch, cv_dir):
+    _wire(
+        monkeypatch,
+        parses=[COMPLETE],
+        facts=[FIRST_FACTS, SECOND_FACTS],
+        confirms=(),
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    first = _upload(cv_dir, "first.txt")
+    g.invoke(Command(resume=first), _thread())
+    state = g.invoke(Command(resume="a PhD in ML in the UK"), _thread())
+    assert state["cv_facts"].degree == "BSc Computer Science"
+    assert state.get("pending_cv") is None
+    assert "BSc Computer Science" in state["messages"][-1][1]
+
+    second = _upload(cv_dir, "second.txt")
+    state = g.invoke(Command(resume=second), _thread())
+    assert state["cv_facts"].degree == "MSc Computer Science"
+    assert "MSc Computer Science" in state["messages"][-1][1]
 
 
 # --- AC 1 + AC 5, page side -----------------------------------------------

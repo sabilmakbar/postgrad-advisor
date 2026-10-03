@@ -16,11 +16,22 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from app.cv import cv_ask_node, cv_confirm_node, cv_intake_node, split_upload
+from app.cv import (
+    cv_ask_node,
+    cv_confirm_node,
+    cv_intake_node,
+    extract_facts,
+    parse_cv,
+    render_interview_facts,
+    split_upload,
+)
 from app.fit import fit_node
 from app.model_layer import chat, structured
 from app.prompts import (
     CV_AFTER_CAP,
+    CV_EXTRACTION_FAILED,
+    CV_FIXED_ACKS,
+    CV_PARSE_FAILED,
     CV_RECEIVED,
     FIRST_QUESTION,
     INTERVIEWER_INSTRUCTIONS,
@@ -30,7 +41,7 @@ from app.prompts import (
     TURN_CAP_MESSAGE,
 )
 from app.shortlist import degree_intent_label, humanize_degree_text, shortlist_node
-from app.state import CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate
+from app.state import CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate, WorkExperience
 
 MAX_TURNS = 10  # AC 2: cap enforced here, not in the prompt
 
@@ -40,7 +51,7 @@ MAX_TURNS = 10  # AC 2: cap enforced here, not in the prompt
 # state today: an omitted type does NOT raise — it silently comes back as a
 # plain dict, so a partial allowlist trades a loud warning for a quiet type
 # downgrade. tests/test_graph_serde.py fails if a model is added and not listed.
-CHECKPOINT_TYPES = (CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate)
+CHECKPOINT_TYPES = (CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate, WorkExperience)
 _SERDE = JsonPlusSerializer(allowed_msgpack_modules=list(CHECKPOINT_TYPES))
 
 _REQUIRED_SLOTS = ("degree_intent", "field", "target_regions")
@@ -77,6 +88,32 @@ def _next_open_slot(state: InterviewState) -> str | None:
     return None
 
 
+def _read_upload(path: str) -> tuple[dict, str]:
+    try:
+        text = parse_cv(path)
+        if not text.strip():
+            raise ValueError("no extractable text")
+    except Exception:
+        return {
+            "pending_cv": path,
+            "cv_facts": None,
+            "cv_parsed_path": None,
+        }, CV_PARSE_FAILED
+    try:
+        facts = extract_facts(text)
+    except Exception:
+        return {
+            "pending_cv": path,
+            "cv_facts": None,
+            "cv_parsed_path": None,
+        }, CV_EXTRACTION_FAILED
+    return {
+        "pending_cv": path,
+        "cv_facts": facts,
+        "cv_parsed_path": path,
+    }, CV_RECEIVED
+
+
 def _interviewer(state: InterviewState) -> dict:
     """One agent turn. On revisits, ``interrupt()`` is the first effect, so the
     node's re-run on resume never repeats a model call."""
@@ -108,12 +145,14 @@ def _interviewer(state: InterviewState) -> dict:
         # right above, so restating it only made the user read it twice
         # (fix round 2). Two uploads in a row get one acknowledgement each,
         # never a stacked one.
-        if messages[-1] != ("ai", CV_RECEIVED):
-            messages.append(("ai", CV_RECEIVED))
-        return {"pending_cv": upload, "messages": messages}
+        extracted, note = _read_upload(upload)
+        updates.update(extracted)
+        if messages[-1] != ("ai", note):
+            messages.append(("ai", note))
+        return {**updates, "messages": messages}
     # The question being answered is not always messages[-2]: an
     # acknowledgement can sit between it and this answer (fix round 2).
-    question = next(t for r, t in reversed(messages) if r == "ai" and t != CV_RECEIVED)
+    question = next(t for r, t in reversed(messages) if r == "ai" and t not in CV_FIXED_ACKS)
     messages.append(("human", answer))
     parsed = structured(SlotUpdate, tier="light").invoke(
         [
@@ -144,6 +183,11 @@ def _interviewer(state: InterviewState) -> dict:
 
     merged = state.model_copy(update=updates)
     capped = not merged.is_complete() and state.turns >= MAX_TURNS
+    upload_note = None
+    if upload and (merged.is_complete() or not capped):
+        extracted, upload_note = _read_upload(upload)
+        updates.update(extracted)
+        merged = state.model_copy(update=updates)
     # one Send, two parts: the typed answer counted above, the CV is held and
     # acknowledged here, before the normal next question (fix round). The cap
     # ends the run at END, so nothing ever consumes a held CV — whether it
@@ -152,7 +196,7 @@ def _interviewer(state: InterviewState) -> dict:
     if capped and merged.pending_cv:
         messages.append(("ai", CV_AFTER_CAP))
     elif upload:
-        messages.append(("ai", CV_RECEIVED))
+        messages.append(("ai", upload_note))
     if merged.is_complete():
         return {**updates, "messages": messages}
     if capped:
@@ -173,6 +217,25 @@ def _interviewer(state: InterviewState) -> dict:
         context += (
             f" Just captured this turn: {captured}. Treat this as an "
             "interpretation the user can correct."
+        )
+    if merged.cv_facts:
+        context += (
+            " " + render_interview_facts(merged.cv_facts) +
+            " These are provisional facts from the CV: attribute them to the CV, never use them "
+            "to fill or overwrite a slot, and ask a direct clarification only for a concrete factual "
+            "conflict. The latest explicit user clarification controls interview prose and slots, but "
+            "tell them factual CV corrections must also be repeated at the later CV confirmation gate. "
+            "If the field slot is open, propose plausible directions from the CV rather than asking "
+            "blindly. A broad topic such as AI or machine learning is not itself a chosen programme "
+            "direction; when several are plausible, offer computer-science foundations, mathematical/"
+            "statistical foundations, and application-led study as distinct choices. The CV has been "
+            "read and acknowledged already: do not comment on the attachment or say you cannot open files."
+        )
+    elif merged.pending_cv:
+        context += (
+            " A CV arrived but is not readable or has not been read. The app already explained why. "
+            "Do not repeat it, apologise, offer to open the file, claim to have read it, or say you cannot "
+            "view files."
         )
     reply = chat(tier="heavy").invoke(
         [("system", f"{PERSONA}\n\n{INTERVIEWER_INSTRUCTIONS}"), *messages, ("system", context)]

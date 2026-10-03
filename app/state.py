@@ -8,10 +8,17 @@ DegreeIntent = Literal["masters_coursework", "masters_research", "phd"]
 FitLabel = Literal["strong", "borderline", "reach", "unknown"]  # AD-4: labels only
 
 
+class WorkExperience(BaseModel):
+    employer: str
+    title: str
+    tenure: str
+    summary: str
+    months: int | None = None
+
+
 class CVFacts(BaseModel):
-    """Key facts extracted from the CV (story 005, AC 1). Doubles as the
-    light-tier structured-output schema, like SlotUpdate. Fields left unset
-    mean the CV didn't state them — never guessed."""
+    """Provisional facts extracted from the CV until ``cv_confirmed``. Doubles
+    as the light-tier structured-output schema. Unset fields were not stated."""
 
     degree: str | None = Field(
         None,
@@ -29,6 +36,8 @@ class CVFacts(BaseModel):
     english_test: str | None = Field(
         None, description="English test and score, e.g. 'IELTS 7.5'. Unset if none."
     )
+    experience: list[WorkExperience] = []
+    experience_months: int | None = None
 
 
 class ProgramFit(BaseModel):
@@ -70,7 +79,8 @@ class InterviewState(BaseModel):
     shortlist: list[ShortlistEntry] = []  # built by the shortlister node
     pending_cv: str | None = None  # story 009: uploaded path held until cv_intake
     pending_correction: str | None = None  # story 009: text sent with that upload
-    cv_facts: CVFacts | None = None  # story 005: set by cv_intake, user-confirmed
+    cv_facts: CVFacts | None = None  # extracted/provisional until cv_confirmed
+    cv_parsed_path: str | None = None  # upload whose facts _interviewer extracted
     cv_confirmed: bool = False  # story 005: set once the user confirms the echo
     searches_used: int = 0  # story 005: runtime-search budget counter (AD-3, <=12)
     fit_verdicts: list[ProgramFit] = []  # story 005: built by the fit node

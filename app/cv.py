@@ -9,6 +9,8 @@ free-tier model prompts — acceptable for the client's own CV per the spec
 assumption, but a BLOCKER before real users.
 """
 
+import re
+from datetime import date
 from pathlib import Path
 
 from langgraph.types import interrupt
@@ -23,7 +25,98 @@ from app.prompts import (
     CV_REQUEST,
     CV_UNREADABLE,
 )
-from app.state import CVFacts, InterviewState
+from app.state import CVFacts, InterviewState, WorkExperience
+
+_MONTHS = {name.lower(): number for number, name in enumerate(
+    ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1
+)}
+_OPEN_ENDS = {"present", "current", "now", "ongoing"}
+
+
+def _today() -> date:
+    return date.today()
+
+
+def _month_index(value: str) -> tuple[int, bool] | None:
+    value = value.strip().lower()
+    if value in _OPEN_ENDS:
+        now = _today()
+        return now.year * 12 + now.month - 1, False
+    match = re.fullmatch(r"([a-z]{3,9})\s+(\d{4})", value)
+    if match:
+        month = _MONTHS.get(match.group(1)[:3])
+        if month:
+            return int(match.group(2)) * 12 + month - 1, False
+    match = re.fullmatch(r"(\d{4})", value)
+    if match:
+        return int(match.group(1)) * 12, True
+    return None
+
+
+def _parse_tenure(tenure: str) -> tuple[int | None, tuple[int, int] | None, bool, bool]:
+    """Return months, dated interval, approximate, and counted-to-today."""
+    duration = re.fullmatch(r"\s*(\d+)\s*(?:yrs?|years?)\s*", tenure, re.I)
+    if duration:
+        return int(duration.group(1)) * 12, None, True, False
+    parts = re.split(r"\s*(?:-|–|\bto\b)\s*", tenure.strip(), maxsplit=1, flags=re.I)
+    if len(parts) != 2:
+        return None, None, False, False
+    start, finish = _month_index(parts[0]), _month_index(parts[1])
+    if not start or not finish or finish[0] < start[0]:
+        return None, None, False, False
+    open_end = parts[1].strip().lower() in _OPEN_ENDS
+    return finish[0] - start[0], (start[0], finish[0]), start[1] or finish[1], open_end
+
+
+def derive_experience(facts: CVFacts) -> CVFacts:
+    intervals: list[tuple[int, int]] = []
+    duration_only = 0
+    experience = []
+    for position in facts.experience:
+        months, interval, _, _ = _parse_tenure(position.tenure)
+        experience.append(position.model_copy(update={"months": months}))
+        if interval:
+            intervals.append(interval)
+        elif months is not None:
+            duration_only += months
+    intervals.sort()
+    merged: list[list[int]] = []
+    for start, end in intervals:
+        if merged and start < merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    total = sum(end - start for start, end in merged) + duration_only
+    return facts.model_copy(
+        update={
+            "experience": experience,
+            "experience_months": total if intervals or duration_only else None,
+        }
+    )
+
+
+def render_interview_facts(facts: CVFacts) -> str:
+    dated, other = [], []
+    for order, position in enumerate(facts.experience):
+        months, interval, _, _ = _parse_tenure(position.tenure)
+        item = (position, months)
+        if interval:
+            dated.append((interval[1], order, item))
+        else:
+            other.append((order, item))
+    ordered = [item for _, _, item in sorted(dated, key=lambda row: (-row[0], row[1]))]
+    ordered += [item for _, item in other]
+    positions = "; ".join(
+        f"{position.title} — {position.tenure} ({months if months is not None else 'unknown'} months): "
+        f"{position.summary}"
+        for position, months in ordered[:3]
+    ) or "none determinable"
+    return (
+        "Your CV provisionally reads: "
+        f"degree={facts.degree or 'not found'}; publications={len(facts.publications)}; "
+        f"derived total experience={facts.experience_months if facts.experience_months is not None else 'unknown'} months; "
+        f"recent positions={positions}."
+    )
 
 
 def split_upload(message: str) -> tuple[str | None, str]:
@@ -72,21 +165,45 @@ def parse_cv(path: str) -> str:
 
 def extract_facts(cv_text: str) -> CVFacts:
     """Slot-parsing, so light tier (AD-7)."""
-    return structured(CVFacts, tier="light").invoke(
+    facts = structured(CVFacts, tier="light").invoke(
         [("system", CV_EXTRACT_INSTRUCTIONS), ("human", cv_text)]
     )
+    return derive_experience(facts)
 
 
 def render_facts(facts: CVFacts) -> str:
     """Code-rendered echo of the extracted facts + the confirmation question."""
     pubs = "; ".join(facts.publications) or "none found"
+    positions = []
+    total_approximate = False
+    for position in facts.experience:
+        months, interval, approximate, open_end = _parse_tenure(position.tenure)
+        total_approximate |= approximate or interval is None
+        derived = "not derived" if months is None else f"{months} months"
+        if open_end:
+            derived += ", counted to today"
+        elif approximate:
+            derived += ", approximate"
+        positions.append(
+            f"  - {position.title}, {position.employer} — {position.tenure} ({derived})"
+        )
+    experience = "\n".join(positions) or "  - none found"
+    if facts.experience_months is None:
+        total = "not derived"
+    else:
+        total = f"{facts.experience_months} months; overlapping dated roles counted once"
+        if total_approximate:
+            total += "; approximate, and duration-only roles may overlap dated roles"
     return (
         "Here is what I read from your CV — please check it before I judge fit:\n"
         f"- degree: {facts.degree or 'not found'}\n"
         f"- GPA: {facts.gpa or 'not found'}\n"
         f"- publications: {pubs}\n"
         f"- English test: {facts.english_test or 'not found'}\n"
-        "Is this correct? Reply yes, or tell me what to fix."
+        f"- work experience:\n{experience}\n"
+        f"- total experience: {total}\n"
+        "Is this correct? Reply yes, or tell me what to fix. For work-history "
+        "corrections, provide the complete corrected list."
     )
 
 
@@ -112,8 +229,12 @@ def review_facts(facts: CVFacts, reply: str) -> tuple[bool, CVFacts]:
         ]
     )
     if parsed.corrections:
-        updates = {k: v for k, v in parsed.corrections.model_dump().items() if v}
-        facts = facts.model_copy(update=updates)
+        updates = {
+            name: getattr(parsed.corrections, name)
+            for name in parsed.corrections.model_fields_set
+        }
+        updates.pop("experience_months", None)
+        facts = derive_experience(facts.model_copy(update=updates))
     return parsed.confirmed, facts
 
 
@@ -145,6 +266,12 @@ def cv_intake_node(state: InterviewState) -> dict:
     Text sent WITH the CV (held from an earlier stage or typed here) is a
     correction and is applied to the fresh extraction (story 009 fix round)."""
     path, extra = state.pending_cv, state.pending_correction
+    if path and state.cv_parsed_path == path:
+        return {
+            "pending_cv": None,
+            "pending_correction": None,
+            "messages": state.messages + [("ai", render_facts(state.cv_facts))],
+        }
     if not path:
         path, extra = split_upload(interrupt(state.messages[-1][1]))
         if not path:  # the ask also accepts a path the user types by hand

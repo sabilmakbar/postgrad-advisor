@@ -25,7 +25,7 @@ Keys (all free tiers, all optional except at least one model provider):
 | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | last-resort model | chain is shorter |
 | `TAVILY_API_KEY` | entry-requirement search | falls back to DuckDuckGo |
 
-Tests: `uv run pytest` (68, all offline — no key needed).
+Tests: `uv run pytest` (112, all offline — no key needed).
 End-to-end against live providers: `uv run python scripts/e2e_scripted.py` (add `--no-gemini`
 to prove the fallback path).
 
@@ -71,20 +71,17 @@ the composer** — it is sent only when you press Send, with whatever you typed.
 
 | When you attach | What should happen |
 |---|---|
-| Mid-interview, with typed text | "Got your CV — I'll read it right after we finish the interview", **and** your typed answer is counted; the interview advances |
-| Mid-interview, nothing typed | Same acknowledgment; the current question stands (it is not repeated) |
+| Mid-interview, with typed text | Parsed immediately and used to inform later questions; your typed answer is also counted and the interview advances |
+| Mid-interview, nothing typed | Parsed immediately; the current question stands (it is not repeated) |
 | At the CV step | Parsed straight away — no repeated ask |
 | At the confirm step | Treated as "use this one instead": re-parsed, and any correction you typed is applied too |
 | On the final (10th) interview turn | The run ends honestly, saying the CV is held but the interview lacked detail — start a fresh chat |
 | After the run is over (verdicts done, or the interview hit the 10-turn cap) | The page says the chat has finished and a new CV can't change it; reload for a fresh one |
 
-Parsing is **local** (pypdf / plain text). Extracted facts are echoed back — degree, GPA, publications,
-English test — for you to confirm or correct before anything is judged.
-
-Known gap (story 011): a CV handed over **during** the interview is held unread until the interview
-ends, so the questions that follow it are not yet grounded in your background. Intent questions
-(degree type, regions, timing) are asked regardless — a CV states where you have been, not what you
-want next.
+Parsing is **local** (pypdf / plain text). Extracted facts are echoed back — degree, GPA,
+publications, English test, work history, and derived experience duration — for you to confirm or
+correct before anything is judged. A CV handed over during the interview informs later questions,
+but it never fills intent, field, or region slots on the user's behalf.
 
 - **Defect if:** the agent claims it "can't open files", the CV path shows up as a chat answer,
   the CV step asks twice, or an attached CV is silently forgotten.

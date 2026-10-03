@@ -90,7 +90,19 @@ def fit_node(state: InterviewState) -> dict:
     """One search + one heavy-tier judgment per shortlisted program, within the
     state's search budget; final summary rendered in code (AC 2-5)."""
     chain = structured(FitVerdict, tier="heavy")
-    cv = {k: v for k, v in state.cv_facts.model_dump().items() if v}
+    facts = state.cv_facts
+    cv = {
+        "degree": facts.degree,
+        "gpa": facts.gpa,
+        "publications": facts.publications,
+        "english_test": facts.english_test,
+        "experience": [
+            {"title": position.title, "tenure": position.tenure}
+            for position in facts.experience
+        ],
+        "experience_months": facts.experience_months,
+    }
+    cv = {k: v for k, v in cv.items() if v is not None and v != []}
     used = state.searches_used
     verdicts: list[ProgramFit] = []
     for entry in state.shortlist:
