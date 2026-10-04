@@ -262,13 +262,39 @@ function showChip() {
 const atBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < 40;
 const toBottom = () => { log.scrollTop = log.scrollHeight; };
 
+// Render the small Markdown subset used by agent prose without accepting HTML.
+// Build DOM nodes directly so model text can never become executable markup.
+function formatAgentText(node, text) {
+  node.textContent = "";
+  const inline = /(\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\))/g;
+  let end = 0;
+  for (const match of text.matchAll(inline)) {
+    node.append(document.createTextNode(text.slice(end, match.index)));
+    if (match[2]) {
+      const strong = document.createElement("strong");
+      strong.textContent = match[2];
+      node.append(strong);
+    } else {
+      const link = document.createElement("a");
+      link.textContent = match[3];
+      link.href = match[4];
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      node.append(link);
+    }
+    end = match.index + match[0].length;
+  }
+  node.append(document.createTextNode(text.slice(end)));
+}
+
 // Only follow new content when the reader is already at the bottom (AC 4).
 function add(role, text) {
   const row = document.createElement("div");
   row.className = "row " + role;
   const bubble = document.createElement("div");
   bubble.className = "bubble";
-  bubble.textContent = text;
+  if (role === "ai") formatAgentText(bubble, text);
+  else bubble.textContent = text;
   row.append(bubble);
   const stick = atBottom();
   log.append(row);
@@ -380,6 +406,8 @@ function finish(state) {
   // discards the whole draft bubble (AC 2).
   if (state.finals.some(([role]) => role === "ai") || !state.body.textContent)
     state.draft.remove();
+  else
+    formatAgentText(state.body, state.body.textContent);
   if (state.trace.length && state.finals.some(([role]) => role === "ai"))
     add("trace", state.trace.join(" › "));
   for (const [role, text] of state.finals) {
