@@ -31,6 +31,10 @@ _MONTHS = {name.lower(): number for number, name in enumerate(
     ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1
 )}
 _OPEN_ENDS = {"present", "current", "now", "ongoing"}
+_CURRENT_LOCATION_EVIDENCE = re.compile(
+    r"\b(?:current\s+(?:location|residence)|(?:currently\s+)?(?:live|living|reside|residing|based)\s+in)\b",
+    re.I,
+)
 
 
 def _today() -> date:
@@ -58,7 +62,7 @@ def _parse_tenure(tenure: str) -> tuple[int | None, tuple[int, int] | None, bool
     duration = re.fullmatch(r"\s*(\d+)\s*(?:yrs?|years?)\s*", tenure, re.I)
     if duration:
         return int(duration.group(1)) * 12, None, True, False
-    parts = re.split(r"\s*(?:-|–|\bto\b)\s*", tenure.strip(), maxsplit=1, flags=re.I)
+    parts = re.split(r"\s*(?:-|–|—|\bto\b)\s*", tenure.strip(), maxsplit=1, flags=re.I)
     if len(parts) != 2:
         return None, None, False, False
     start, finish = _month_index(parts[0]), _month_index(parts[1])
@@ -114,6 +118,7 @@ def render_interview_facts(facts: CVFacts) -> str:
     return (
         "Your CV provisionally reads: "
         f"degree={facts.degree or 'not found'}; publications={len(facts.publications)}; "
+        f"current location={facts.current_location or 'not found'}; "
         f"derived total experience={facts.experience_months if facts.experience_months is not None else 'unknown'} months; "
         f"recent positions={positions}."
     )
@@ -168,7 +173,25 @@ def extract_facts(cv_text: str) -> CVFacts:
     facts = structured(CVFacts, tier="light").invoke(
         [("system", CV_EXTRACT_INSTRUCTIONS), ("human", cv_text)]
     )
+    if facts.current_location and not _location_is_grounded(
+        cv_text, facts.current_location
+    ):
+        facts = facts.model_copy(update={"current_location": None})
     return derive_experience(facts)
+
+
+def _location_is_grounded(cv_text: str, value: str) -> bool:
+    """Require the extracted value beside explicit current-location evidence."""
+    wanted = " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+    lines = [" ".join(re.findall(r"[a-z0-9]+", line.casefold())) for line in cv_text.splitlines()]
+    for index, line in enumerate(lines):
+        if _CURRENT_LOCATION_EVIDENCE.search(line) and wanted in line:
+            return True
+        if line in {"current location", "current residence"}:
+            following = next((item for item in lines[index + 1:] if item), "")
+            if wanted in following:
+                return True
+    return False
 
 
 def render_facts(facts: CVFacts) -> str:
@@ -200,6 +223,7 @@ def render_facts(facts: CVFacts) -> str:
         f"- GPA: {facts.gpa or 'not found'}\n"
         f"- publications: {pubs}\n"
         f"- English test: {facts.english_test or 'not found'}\n"
+        f"- current location: {facts.current_location or 'not found'}\n"
         f"- work experience:\n{experience}\n"
         f"- total experience: {total}\n"
         "Is this correct? Reply yes, or tell me what to fix. For work-history "
@@ -228,14 +252,17 @@ def review_facts(facts: CVFacts, reply: str) -> tuple[bool, CVFacts]:
             ("human", f"Facts shown:\n{render_facts(facts)}\n\nUser reply: {reply}"),
         ]
     )
-    if parsed.corrections:
+    has_corrections = bool(
+        parsed.corrections and parsed.corrections.model_fields_set
+    )
+    if has_corrections:
         updates = {
             name: getattr(parsed.corrections, name)
             for name in parsed.corrections.model_fields_set
         }
         updates.pop("experience_months", None)
         facts = derive_experience(facts.model_copy(update=updates))
-    return parsed.confirmed, facts
+    return parsed.confirmed and not has_corrections, facts
 
 
 def cv_ask_node(state: InterviewState) -> dict:

@@ -4,7 +4,14 @@ from langchain_core.runnables import RunnableLambda
 
 import app.cv as cv_mod
 import app.fit as fit_mod
-from app.cv import CVConfirmation, derive_experience, render_facts, render_interview_facts, review_facts
+from app.cv import (
+    CVConfirmation,
+    derive_experience,
+    extract_facts,
+    render_facts,
+    render_interview_facts,
+    review_facts,
+)
 from app.fit import FitVerdict, fit_node
 from app.requirements_search import SearchResult
 from app.state import CVFacts, InterviewState, ShortlistEntry, WorkExperience
@@ -45,6 +52,21 @@ def test_overlap_merge_duration_only_and_touching_boundaries(monkeypatch):
     assert "duration-only roles may overlap dated roles" in echo
 
 
+def test_reported_em_dash_ranges_have_exact_durations_and_total(monkeypatch):
+    monkeypatch.setattr(cv_mod, "_today", lambda: date(2026, 10, 4))
+    facts = derive_experience(CVFacts(experience=[
+        _position("Oct 2024 — Present", "Current"),
+        _position("Feb 2024 — Jul 2024", "Short"),
+        _position("Sep 2021 — Jul 2024", "Long"),
+        _position("Nov 2020 — Sep 2021", "Earlier"),
+    ]))
+    assert [position.months for position in facts.experience] == [24, 5, 34, 10]
+    assert facts.experience_months == 68
+    echo = render_facts(facts)
+    assert all(f"{months} months" in echo for months in (24, 5, 34, 10, 68))
+    assert "not derived" not in echo
+
+
 def test_context_uses_three_most_recent_positions_with_summaries(monkeypatch):
     monkeypatch.setattr(cv_mod, "_today", lambda: date(2024, 1, 1))
     facts = derive_experience(CVFacts(
@@ -62,6 +84,85 @@ def test_context_uses_three_most_recent_positions_with_summaries(monkeypatch):
     assert context.index("Newest") < context.index("Middle") < context.index("Old")
     assert "Duration" not in context
     assert all(text in context for text in ("new summary", "middle summary", "old summary"))
+
+
+def test_current_location_is_echoed_and_can_be_replaced_or_cleared(monkeypatch):
+    facts = CVFacts(current_location="Jakarta, Indonesia")
+    assert "current location: Jakarta, Indonesia" in render_facts(facts)
+    assert "current location=Jakarta, Indonesia" in render_interview_facts(facts)
+
+    corrections = iter([
+        CVFacts(current_location="Bandung, Indonesia"),
+        CVFacts(current_location=None),
+    ])
+    monkeypatch.setattr(
+        cv_mod,
+        "structured",
+        lambda schema, tier="light": RunnableLambda(
+            lambda _: CVConfirmation(confirmed=False, corrections=next(corrections))
+        ),
+    )
+    confirmed, facts = review_facts(facts, "I live in Bandung")
+    assert confirmed is False and facts.current_location == "Bandung, Indonesia"
+    assert "current location: Bandung, Indonesia" in render_facts(facts)
+    confirmed, facts = review_facts(facts, "clear my location")
+    assert confirmed is False and facts.current_location is None
+    assert "current location: not found" in render_facts(facts)
+
+
+def test_current_location_extraction_requires_explicit_support(monkeypatch):
+    monkeypatch.setattr(
+        cv_mod,
+        "structured",
+        lambda schema, tier="light": RunnableLambda(
+            lambda _: CVFacts(current_location="Jakarta, Indonesia")
+        ),
+    )
+    facts = extract_facts("Current location: Jakarta, Indonesia")
+    assert facts.current_location == "Jakarta, Indonesia"
+
+
+def test_current_location_extraction_clears_unsupported_model_value(monkeypatch):
+    monkeypatch.setattr(
+        cv_mod,
+        "structured",
+        lambda schema, tier="light": RunnableLambda(
+            lambda _: CVFacts(current_location="London, United Kingdom")
+        ),
+    )
+    cv_text = """Education: University of London
+Employer: London Labs
+Project: London mobility study
+Citizenship: United Kingdom
+Nationality: British
+Address: London, United Kingdom"""
+    assert extract_facts(cv_text).current_location is None
+
+
+def test_confirmed_correction_must_be_re_echoed_before_later_confirmation(monkeypatch):
+    replies = iter([
+        CVConfirmation(
+            confirmed=True,
+            corrections=CVFacts(current_location="Bandung, Indonesia"),
+        ),
+        CVConfirmation(
+            confirmed=True,
+            corrections=CVFacts(current_location=None),
+        ),
+        CVConfirmation(confirmed=True),
+    ])
+    monkeypatch.setattr(
+        cv_mod,
+        "structured",
+        lambda schema, tier="light": RunnableLambda(lambda _: next(replies)),
+    )
+    facts = CVFacts(current_location="Jakarta, Indonesia")
+    confirmed, facts = review_facts(facts, "yes, but I now live in Bandung")
+    assert confirmed is False and facts.current_location == "Bandung, Indonesia"
+    confirmed, facts = review_facts(facts, "yes, but clear my location")
+    assert confirmed is False and facts.current_location is None
+    confirmed, facts = review_facts(facts, "yes, that is now correct")
+    assert confirmed is True and facts.current_location is None
 
 
 def test_work_history_correction_replaces_whole_list_and_rederives(monkeypatch):
@@ -98,6 +199,7 @@ def test_fit_projects_only_allowed_work_fields(monkeypatch):
         gpa="3.8 / 4.0",
         publications=["Paper A"],
         english_test="IELTS 8.0",
+        current_location="Jakarta, Indonesia",
         experience=[_position("2 yrs", employer="Secret Corp", summary="private summary")],
     ))
     state = InterviewState(
@@ -131,3 +233,4 @@ def test_fit_projects_only_allowed_work_fields(monkeypatch):
     assert "experience_months': 24" in prompt
     assert all(value in prompt for value in ("BSc Mathematics", "3.8 / 4.0", "Paper A", "IELTS 8.0"))
     assert "Secret Corp" not in prompt and "private summary" not in prompt and "'months'" not in prompt
+    assert "Jakarta" not in prompt and "current_location" not in prompt

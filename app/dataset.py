@@ -14,6 +14,14 @@ Continent = Literal[
 DegreeType = Literal["masters_course", "masters_research", "phd"]
 
 _RANK_BAND = re.compile(r"^\d+(-\d+|\+)$")  # e.g. "801-850" or "1401+"
+CONTINENTS = (
+    "Africa", "Asia", "Europe", "North America", "Oceania", "South America"
+)
+REGION_ALIASES = {
+    "us": "United States",
+    "usa": "United States",
+    "uk": "United Kingdom",
+}
 
 
 class University(BaseModel):
@@ -60,3 +68,28 @@ class ProgramDataset(BaseModel):
 
 def load_dataset(path: Path = DATASET_PATH) -> ProgramDataset:
     return ProgramDataset.model_validate_json(path.read_text())
+
+
+def _normalise_region(value: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def _region_lookup(countries=None) -> dict[str, str]:
+    countries = countries or {u.country for u in load_dataset().universities}
+    values = [*countries, *CONTINENTS]
+    return {_normalise_region(value): value for value in values} | REGION_ALIASES
+
+
+def canonical_region(value: str, countries=None) -> str | None:
+    """Resolve one exact country, continent, or declared alias."""
+    return _region_lookup(countries).get(_normalise_region(value))
+
+
+def regions_in_text(text: str, countries=None) -> list[str]:
+    """Return canonical regions supported by whole normalized tokens in text."""
+    words = f" {_normalise_region(text)} "
+    found = []
+    for token, canonical in _region_lookup(countries).items():
+        if f" {token} " in words and canonical not in found:
+            found.append(canonical)
+    return found

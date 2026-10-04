@@ -36,6 +36,11 @@ class CVFacts(BaseModel):
     english_test: str | None = Field(
         None, description="English test and score, e.g. 'IELTS 7.5'. Unset if none."
     )
+    current_location: str | None = Field(
+        None,
+        description="Explicit current residence or current location only. Exclude "
+        "education, employer, project, citizenship, nationality, and inferred locations.",
+    )
     experience: list[WorkExperience] = []
     experience_months: int | None = None
 

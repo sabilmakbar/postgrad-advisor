@@ -463,6 +463,44 @@ def test_plain_confirmation_still_reaches_fit(monkeypatch, cv_dir):
     assert "__interrupt__" not in state  # run over: the page will see done/over
 
 
+def test_confirmed_corrections_re_echo_until_a_clean_affirmation(monkeypatch, cv_dir):
+    _wire(
+        monkeypatch,
+        questions=(),
+        parses=[COMPLETE],
+        facts=[CVFacts(current_location="Jakarta, Indonesia")],
+        confirms=[
+            CVConfirmation(
+                confirmed=True,
+                corrections=CVFacts(current_location="Bandung, Indonesia"),
+            ),
+            CVConfirmation(
+                confirmed=True,
+                corrections=CVFacts(current_location=None),
+            ),
+            CVConfirmation(confirmed=True),
+        ],
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    g.invoke(Command(resume="a PhD in ML in the UK"), _thread())
+    g.invoke(Command(resume=_upload(cv_dir)), _thread())
+
+    state = g.invoke(Command(resume="yes, but I now live in Bandung"), _thread())
+    assert not state.get("cv_confirmed")
+    assert "current location: Bandung, Indonesia" in state["messages"][-1][1]
+    assert state["__interrupt__"][0].value == state["messages"][-1][1]
+
+    state = g.invoke(Command(resume="yes, but clear my location"), _thread())
+    assert not state.get("cv_confirmed")
+    assert "current location: not found" in state["messages"][-1][1]
+    assert state["__interrupt__"][0].value == state["messages"][-1][1]
+
+    state = g.invoke(Command(resume="yes, that is correct"), _thread())
+    assert state["cv_confirmed"] is True
+    assert state["messages"][-1] == ("ai", "VERDICTS")
+
+
 # --- story 011: early extraction informs the interview ---------------------
 
 

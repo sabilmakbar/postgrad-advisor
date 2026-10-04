@@ -110,6 +110,18 @@ def test_named_region_tier_beats_higher_scoring_unnamed_region():
     assert [u.university for u in candidates] == ["Inside-20", "Inside-10", "Outside-100", "Outside-99"]
 
 
+def test_region_aliases_are_exact_and_do_not_match_country_substrings():
+    pool = [
+        _uni("US", "United States", "North America", 1, ["computer_science"]),
+        _uni("AU", "Australia", "Oceania", 2, ["computer_science"]),
+        _uni("UK", "United Kingdom", "Europe", 3, ["computer_science"]),
+    ]
+    us, _ = prefilter(_state(target_regions=["US"]), pool)
+    uk, _ = prefilter(_state(target_regions=["UK"]), pool)
+    assert us[0].university == "US"
+    assert uk[0].university == "UK"
+
+
 def test_field_tier_beats_higher_score_after_region_widening():
     pool = [
         _uni("Field-20", "Japan", "Asia", 100, ["computer_science"], base_score=20),

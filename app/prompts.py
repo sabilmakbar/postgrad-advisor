@@ -47,7 +47,10 @@ FIXED_INTERVIEW_QUESTIONS = {
         "systems, and machine learning; mathematical or statistical foundations; or an "
         "application-led or hybrid programme?"
     ),
-    "target_regions": "Which countries or regions would you consider for study?",
+    "target_regions": (
+        "What is your current country, or which specific countries or regions would you "
+        "consider for study?"
+    ),
 }
 
 POSTDOC_DECLINE = (
@@ -121,9 +124,12 @@ CV_UNREADABLE = (
 CV_EXTRACT_INSTRUCTIONS = """\
 Extract key facts from the CV text below. Fill only the fields the CV clearly
 states; leave everything else unset. Copy degree, GPA, publication, English
-test, employer, title, and tenure values faithfully. For each position, write
-one concise summary of the work described. Never infer facts the CV does not
-state. Do not calculate months or total experience; code derives those."""
+test, employer, title, and tenure values faithfully. Set current_location only
+when the CV explicitly states a current residence or current location; exclude
+education, employer, project, citizenship, nationality, and inferred address
+locations. For each position, write one concise summary of the work described.
+Never infer facts the CV does not state. Do not calculate months or total
+experience; code derives those."""
 
 CV_CONFIRM_INSTRUCTIONS = """\
 The user was shown facts extracted from their CV and asked to confirm them.

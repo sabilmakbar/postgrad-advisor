@@ -26,6 +26,7 @@ from app.cv import (
     render_interview_facts,
     split_upload,
 )
+from app.dataset import canonical_region, regions_in_text
 from app.fit import MAX_SEARCHES, fit_node
 from app.model_layer import chat, structured
 from app.prompts import (
@@ -180,8 +181,15 @@ def _interviewer(state: InterviewState) -> dict:
         if getattr(parsed, name):
             updates[name] = getattr(parsed, name)
             captured[name] = getattr(parsed, name)
+    supported_regions = set(regions_in_text(answer))
+    parsed_regions = list(dict.fromkeys(
+        canonical
+        for value in parsed.target_regions
+        if (canonical := canonical_region(value)) in supported_regions
+    ))
     for name in ("target_regions", "constraints"):
-        new = [v for v in getattr(parsed, name) if v not in getattr(state, name)]
+        values = parsed_regions if name == "target_regions" else getattr(parsed, name)
+        new = [v for v in values if v not in getattr(state, name)]
         if new:
             updates[name] = getattr(state, name) + new
             captured[name] = new
@@ -214,6 +222,12 @@ def _interviewer(state: InterviewState) -> dict:
         messages.append(("ai", decline + _fixed_interview_question(merged)))
         return {**updates, "messages": messages, "turns": state.turns + 1}
 
+    if _next_open_slot(merged) == "target_regions" and not getattr(
+        merged.cv_facts, "current_location", None
+    ):
+        messages.append(("ai", decline + _fixed_interview_question(merged)))
+        return {**updates, "messages": messages, "turns": state.turns + 1}
+
     known = {
         k: v
         for k, v in merged.model_dump(include=set(SlotUpdate.model_fields) - {"postdoc_interest"}).items()
@@ -239,8 +253,11 @@ def _interviewer(state: InterviewState) -> dict:
             "If the field slot is open, propose plausible directions from the CV rather than asking "
             "blindly. A broad topic such as AI or machine learning is not itself a chosen programme "
             "direction; when several are plausible, offer computer-science foundations, mathematical/"
-            "statistical foundations, and application-led study as distinct choices. The CV has been "
-            "read and acknowledged already: do not comment on the attachment or say you cannot open files."
+            "statistical foundations, and application-led study as distinct choices. "
+            "If the target-regions slot is open and the CV states a current location, you may suggest "
+            "nearby concrete dataset countries or continents, but label them as suggestions and require "
+            "the user to choose one. The CV has been read and acknowledged already: do not comment on "
+            "the attachment or say you cannot open files."
         )
     elif merged.pending_cv:
         context += (

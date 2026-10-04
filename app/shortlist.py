@@ -4,7 +4,7 @@ import re
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.dataset import University, load_dataset
+from app.dataset import University, canonical_region, load_dataset
 from app.model_layer import structured
 from app.prompts import (
     FIELD_NOT_IN_REGIONS,
@@ -117,14 +117,8 @@ def _field_match(field: str, u: University) -> bool:
 
 
 def _region_match(regions: list[str], u: University) -> bool:
-    # ponytail: exact/containment match only — "UK" won't hit "United Kingdom";
-    # misses fall through to the explicit widening path. Add an alias map if
-    # real interviews miss too often.
-    places = (u.country.lower(), u.continent.lower())
-    for r in (x.strip().lower() for x in regions):
-        if any(r == p or r in p or p in r for p in places):
-            return True
-    return False
+    places = {u.country, u.continent}
+    return any(canonical_region(region, {u.country}) in places for region in regions)
 
 
 def _rank_key(state: InterviewState, u: University) -> tuple[bool, bool, bool, float]:

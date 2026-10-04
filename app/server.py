@@ -29,8 +29,9 @@ from app.shortlist import CANONICAL_DEGREE_TOKENS, humanize_degree_text
 
 logger = logging.getLogger(__name__)
 
-# SSE contract: token/message/status carry plain text; error carries one JSON
-# object with kind + message; done carries "over" or an empty string.
+# SSE contract: token/message/status carry plain text; error carries JSON for
+# clients that request json-v1 and mapped plain text otherwise; done carries
+# "over" or an empty string.
 ERROR_MESSAGES = {
     "slow": "The model provider is not responding. Please try again in a moment.",
     "offline": "I could not reach the model provider. Check your connection and try again.",
@@ -114,7 +115,12 @@ class _DegreeTokenStream:
         return self._clean(ready)
 
 
-async def _turn(payload, config: dict, seen: int):
+def _error_payload(kind: str, json_errors: bool) -> str:
+    message = ERROR_MESSAGES[kind]
+    return json.dumps({"kind": kind, "message": message}) if json_errors else message
+
+
+async def _turn(payload, config: dict, seen: int, json_errors: bool):
     """SSE events for one graph turn: live tokens while the heavy chat
     generates (AC 2), then the authoritative new messages — code-rendered
     texts and the decline prefix never stream — then done.
@@ -234,19 +240,14 @@ async def _turn(payload, config: dict, seen: int):
         for tail in flush():
             yield _sse("token", tail)
         kind = exc.kind if exc.kind in ERROR_MESSAGES else "unknown"
-        yield _sse(
-            "error", json.dumps({"kind": kind, "message": ERROR_MESSAGES[kind]})
-        )
+        yield _sse("error", _error_payload(kind, json_errors))
         return
     except Exception:  # AC 4: neither page nor logs retain candidate content
         fail_open_nodes()
         for tail in flush():
             yield _sse("token", tail)
         logger.warning("graph turn failed")
-        yield _sse(
-            "error",
-            json.dumps({"kind": "unknown", "message": ERROR_MESSAGES["unknown"]}),
-        )
+        yield _sse("error", _error_payload("unknown", json_errors))
         return
     snapshot = GRAPH.get_state(config)
     new = [t for role, t in snapshot.values.get("messages", [])[seen:] if role == "ai"]
@@ -268,13 +269,13 @@ async def index():
     return FileResponse(ROOT / "static" / "index.html")
 
 
-def _queued_turn(sid: str, payload, config: dict, seen: int):
+def _queued_turn(sid: str, payload, config: dict, seen: int, json_errors: bool):
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
     async def produce():
         with tracing.request_context(sid):
             try:
-                async for event in _turn(payload, config, seen):
+                async for event in _turn(payload, config, seen, json_errors):
                     await queue.put(event)
             finally:
                 _active_turns.pop(sid, None)
@@ -306,8 +307,9 @@ async def chat(request: Request):
         payload = {}
     config = {"configurable": {"thread_id": sid}}
     seen = len(GRAPH.get_state(config).values.get("messages", []))
+    json_errors = request.headers.get("X-Postgrad-Error-Format") == "json-v1"
     response = StreamingResponse(
-        _queued_turn(sid, payload, config, seen), media_type="text/event-stream"
+        _queued_turn(sid, payload, config, seen, json_errors), media_type="text/event-stream"
     )
     response.set_cookie("session", sid)
     return response

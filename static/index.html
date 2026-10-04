@@ -472,7 +472,10 @@ async function send(message, shown, typeFinals) {
     state.touch();
     const res = await fetch("/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Postgrad-Error-Format": "json-v1",
+      },
       body: JSON.stringify({ message }),
       signal: controller.signal,
     });

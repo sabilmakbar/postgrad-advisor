@@ -5,7 +5,7 @@ from collections import Counter
 import pytest
 from pydantic import ValidationError
 
-from app.dataset import ProgramDataset, University, load_dataset
+from app.dataset import ProgramDataset, University, canonical_region, load_dataset, regions_in_text
 
 CONTINENTS = ["Africa", "Asia", "Europe", "North America", "Oceania", "South America"]
 
@@ -77,3 +77,16 @@ def test_rejects_duplicate_names():
         ProgramDataset.model_validate(
             {"source": "x", "retrieved": None, "universities": [VALID_ENTRY, VALID_ENTRY]}
         )
+
+
+def test_exact_region_resolution_and_raw_answer_tokens():
+    countries = {"United States", "United Kingdom", "Australia", "Germany"}
+    assert canonical_region(" usa ", countries) == "United States"
+    assert canonical_region("UK", countries) == "United Kingdom"
+    assert canonical_region("Europe", countries) == "Europe"
+    assert canonical_region("US", {"Australia"}) == "United States"
+    assert canonical_region("land", countries) is None
+    assert regions_in_text("Germany, Europe, or wherever is best", countries) == [
+        "Germany", "Europe"
+    ]
+    assert regions_in_text("near my current location", countries) == []

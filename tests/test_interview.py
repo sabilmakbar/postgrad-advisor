@@ -106,7 +106,7 @@ def test_interview_fills_state_and_hands_off(monkeypatch):
     assert typed.degree_intent == "phd"
     assert typed.field == "machine learning"
     assert typed.focus_area == "NLP"
-    assert typed.target_regions == ["Europe", "UK"]
+    assert typed.target_regions == ["Europe", "United Kingdom"]
     assert typed.constraints == ["needs funding"]
     assert typed.turns == 4 and typed.turns <= 10
     assert len(ask_calls) == 1
@@ -117,6 +117,49 @@ def test_interview_fills_state_and_hands_off(monkeypatch):
     # AD-7: explicit tiers — heavy for user-facing prose, light for slot parsing
     assert tiers["ask"] == ["heavy"]
     assert set(tiers["parse"]) == {"light"}
+
+
+@pytest.mark.parametrize(
+    ("answer", "parsed"),
+    [
+        ("near my current location", ["Indonesia"]),
+        ("wherever has the best programs", ["Europe"]),
+    ],
+)
+def test_vague_region_answer_rejects_model_invention(monkeypatch, answer, parsed):
+    _wire(
+        monkeypatch,
+        questions=[],
+        parses=[
+            SlotUpdate(degree_intent="phd", field="computer science"),
+            SlotUpdate(target_regions=parsed),
+        ],
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    state = g.invoke(Command(resume="a PhD in computer science"), _thread())
+    state = g.invoke(Command(resume=answer), _thread())
+    assert state.get("target_regions") in (None, [])
+    assert not state.get("handed_off")
+    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])
+
+
+def test_mixed_region_answer_keeps_only_explicit_supported_values(monkeypatch):
+    monkeypatch.setattr(graph_mod, "shortlist_node", lambda s: {"handed_off": True})
+    _wire(
+        monkeypatch,
+        questions=[],
+        parses=[
+            SlotUpdate(degree_intent="phd", field="computer science"),
+            SlotUpdate(target_regions=["Europe", "United States", "Australia"]),
+        ],
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    g.invoke(Command(resume="a PhD in computer science"), _thread())
+    state = g.invoke(Command(resume="Europe or the US, or wherever is best"), _thread())
+    assert state["target_regions"] == ["Europe", "United States"]
+    assert state["handed_off"] is True
 
 
 def test_bare_degree_is_rejected_once_then_accepted(monkeypatch):

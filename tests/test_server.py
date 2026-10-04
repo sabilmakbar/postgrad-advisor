@@ -54,7 +54,11 @@ def client(monkeypatch):
 
 
 def _start(client):
-    return client.post("/chat", json={"message": ""})
+    return client.post(
+        "/chat",
+        json={"message": ""},
+        headers={"X-Postgrad-Error-Format": "json-v1"},
+    )
 
 
 def _token_text(body):
@@ -250,6 +254,45 @@ def test_every_error_kind_keeps_its_wire_identity(client, kind):
     assert payload == {"kind": kind, "message": server.ERROR_MESSAGES[kind]}
 
 
+def test_unknown_provider_kind_normalizes_to_unknown_json(client):
+    response = _start(client(FakeGraph(exc=AllProvidersExhausted("private", "new-kind"))))
+    payload = json.loads(response.text.split("data: ", 1)[1])
+    assert payload == {"kind": "unknown", "message": server.ERROR_MESSAGES["unknown"]}
+
+
+@pytest.mark.parametrize("header", [None, "", "json-v2"])
+def test_stale_pages_receive_plain_error_text(client, header):
+    headers = {} if header is None else {"X-Postgrad-Error-Format": header}
+    response = client(FakeGraph(exc=AllProvidersExhausted("private", "quota"))).post(
+        "/chat", json={"message": ""}, headers=headers
+    )
+    payload = response.text.split("data: ", 1)[1].strip()
+    assert payload == server.ERROR_MESSAGES["quota"]
+    assert not payload.startswith("{")
+
+
+@pytest.mark.parametrize(
+    ("headers", "expected"),
+    [
+        ({"X-Postgrad-Error-Format": "json-v1"}, "json"),
+        ({}, "plain"),
+    ],
+)
+def test_generic_exception_uses_negotiated_error_format(client, headers, expected):
+    response = client(FakeGraph(exc=RuntimeError("private"))).post(
+        "/chat", json={"message": ""}, headers=headers
+    )
+    payload = response.text.split("data: ", 1)[1].strip()
+    if expected == "json":
+        assert json.loads(payload) == {
+            "kind": "unknown",
+            "message": server.ERROR_MESSAGES["unknown"],
+        }
+    else:
+        assert payload == server.ERROR_MESSAGES["unknown"]
+    assert "private" not in response.text
+
+
 def test_task_and_custom_statuses_are_ordered_and_not_message_text(client):
     events = [
         ("tasks", {"name": "shortlister"}),
@@ -362,7 +405,7 @@ def test_closing_response_consumer_does_not_release_producer_ownership(monkeypat
         monkeypatch.setattr(server, "_active_turns", {})
         sid = "held-session"
         config = {"configurable": {"thread_id": sid}}
-        consumer = server._queued_turn(sid, {}, config, 0)
+        consumer = server._queued_turn(sid, {}, config, 0, True)
         assert await anext(consumer) == "event: status\ndata: started\n\n"
         producer = server._active_turns[sid]
 
@@ -387,6 +430,7 @@ def test_page_has_exact_silence_lifecycle_and_legacy_error_fallback():
     assert 'state.timedOut && e.name === "AbortError"' in page
     assert "generation !== streamGeneration" in page
     assert 'let error = { kind: "unknown", message: text };' in page
+    assert '"X-Postgrad-Error-Format": "json-v1"' in page
     assert "This turn is taking unusually long." in page
 
 

@@ -301,7 +301,11 @@ def test_graph_stream_failure_closes_started_node(tmp_path, monkeypatch):
             return SimpleNamespace(values={"messages": []}, next=())
 
     monkeypatch.setattr(server, "GRAPH", Graph())
-    response = TestClient(server.app).post("/chat", json={"message": ""})
+    response = TestClient(server.app).post(
+        "/chat",
+        json={"message": ""},
+        headers={"X-Postgrad-Error-Format": "json-v1"},
+    )
 
     assert response.status_code == 200 and '"kind": "unknown"' in response.text
     nodes = [event for event in _events(path) if event["event"] == "graph_node"]
