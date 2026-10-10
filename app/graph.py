@@ -24,6 +24,8 @@ from app.cv import (
     extract_facts,
     parse_cv,
     render_interview_facts,
+    render_location_hint,
+    select_location_hint,
     split_upload,
 )
 from app.dataset import canonical_region, regions_in_text
@@ -45,7 +47,15 @@ from app.prompts import (
     TURN_CAP_MESSAGE,
 )
 from app.shortlist import degree_intent_label, humanize_degree_text, shortlist_node
-from app.state import CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate, WorkExperience
+from app.state import (
+    CVFacts,
+    InterviewState,
+    LocationEvidence,
+    ProgramFit,
+    ShortlistEntry,
+    SlotUpdate,
+    WorkExperience,
+)
 
 MAX_TURNS = 10  # AC 2: cap enforced here, not in the prompt
 
@@ -55,7 +65,15 @@ MAX_TURNS = 10  # AC 2: cap enforced here, not in the prompt
 # state today: an omitted type does NOT raise — it silently comes back as a
 # plain dict, so a partial allowlist trades a loud warning for a quiet type
 # downgrade. tests/test_graph_serde.py fails if a model is added and not listed.
-CHECKPOINT_TYPES = (CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate, WorkExperience)
+CHECKPOINT_TYPES = (
+    CVFacts,
+    InterviewState,
+    LocationEvidence,
+    ProgramFit,
+    ShortlistEntry,
+    SlotUpdate,
+    WorkExperience,
+)
 _SERDE = JsonPlusSerializer(allowed_msgpack_modules=list(CHECKPOINT_TYPES))
 
 _REQUIRED_SLOTS = ("degree_intent", "field", "target_regions")
@@ -141,6 +159,40 @@ def _interviewer(state: InterviewState) -> dict:
     # turns >= 1 here: turn 0 returned above. A question is pending, so
     # receive and parse the answer to it.
     answer = interrupt(messages[-1][1])
+    if state.location_hint_pending:
+        normalized = " ".join(str(answer).casefold().strip().split())
+        hint = select_location_hint(state.cv_facts) if state.cv_facts else None
+        affirmative = {"yes", "y", "yeah", "correct", "still correct", "that's right"}
+        negative = {"no", "n", "nope", "not anymore"}
+        corrected = regions_in_text(answer)
+        is_correction = bool(corrected) or bool(
+            re.search(r"\b(?:live|living|based|reside|residing|moved)\b", normalized)
+        )
+        is_negative = normalized in negative or any(
+            re.match(rf"^{re.escape(prefix)}[,.;:]", normalized)
+            or (is_correction and normalized.startswith(prefix + " "))
+            for prefix in negative
+        )
+        if normalized not in affirmative and not is_negative:
+            return {
+                "messages": messages + [("ai", render_location_hint(hint))],
+            }
+        facts = state.cv_facts
+        if normalized in affirmative and hint:
+            facts = facts.model_copy(update={"current_location": hint.location})
+        elif is_negative:
+            if corrected:
+                facts = facts.model_copy(update={"current_location": corrected[0]})
+        return {
+            "cv_facts": facts,
+            "location_hint_pending": False,
+            "location_hint_rejected": is_negative,
+            "messages": messages + [
+                ("human", answer),
+                ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"]),
+            ],
+            "turns": state.turns + 1,
+        }
     # Story 009 AC 2: a CV arriving mid-interview is handled in code. The
     # path never reaches the LLM — it answers no slot, and improvising about
     # a file it cannot open was the live incident.
@@ -225,6 +277,10 @@ def _interviewer(state: InterviewState) -> dict:
     if _next_open_slot(merged) == "target_regions" and not getattr(
         merged.cv_facts, "current_location", None
     ):
+        hint = select_location_hint(merged.cv_facts) if merged.cv_facts else None
+        if hint and not merged.location_hint_rejected:
+            messages.append(("ai", decline + render_location_hint(hint)))
+            return {**updates, "messages": messages, "location_hint_pending": True}
         messages.append(("ai", decline + _fixed_interview_question(merged)))
         return {**updates, "messages": messages, "turns": state.turns + 1}
 

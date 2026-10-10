@@ -20,7 +20,8 @@ from app.prompts import (
     POSTDOC_DECLINE,
     TURN_CAP_MESSAGE,
 )
-from app.state import InterviewState, SlotUpdate
+from app.cv import render_location_hint
+from app.state import CVFacts, InterviewState, LocationEvidence, SlotUpdate
 
 
 def _wire(monkeypatch, questions, parses):
@@ -53,6 +54,19 @@ def _wire(monkeypatch, questions, parses):
 
 def _thread():
     return {"configurable": {"thread_id": "t"}}
+
+
+def _hint_facts(current_location=None):
+    return CVFacts(
+        current_location=current_location,
+        location_evidence=[LocationEvidence(
+            kind="employment",
+            label="Acme — Engineer",
+            location="Berlin, Germany",
+            tenure="2022 - Present",
+            source_excerpt="Acme — Engineer | Berlin, Germany | 2022 - Present",
+        )],
+    )
 
 
 def test_first_turn_targets_degree_intent_and_pauses(monkeypatch):
@@ -160,6 +174,104 @@ def test_mixed_region_answer_keeps_only_explicit_supported_values(monkeypatch):
     state = g.invoke(Command(resume="Europe or the US, or wherever is best"), _thread())
     assert state["target_regions"] == ["Europe", "United States"]
     assert state["handed_off"] is True
+
+
+def test_location_hint_affirmation_then_separate_region_turn(monkeypatch):
+    facts = _hint_facts()
+    monkeypatch.setattr(graph_mod, "shortlist_node", lambda s: {"handed_off": True})
+    tiers, ask_calls = _wire(
+        monkeypatch,
+        questions=[],
+        parses=[
+            SlotUpdate(degree_intent="phd", field="computer science"),
+            SlotUpdate(target_regions=["Europe"]),
+        ],
+    )
+    g = build_graph()
+    g.invoke({"cv_facts": facts}, _thread())
+    state = g.invoke(Command(resume="a PhD in computer science"), _thread())
+    assert state["messages"][-1] == ("ai", render_location_hint(facts.location_evidence[0]))
+    assert state["turns"] == 1 and state["location_hint_pending"] is True
+    assert tiers["parse"] == ["light"] and ask_calls == []
+
+    state = g.invoke(Command(resume="yes"), _thread())
+    assert state["cv_facts"].current_location == "Berlin, Germany"
+    assert state.get("target_regions") in (None, [])
+    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])
+    assert state["turns"] == 2
+    assert tiers["parse"] == ["light"] and ask_calls == []
+
+    state = g.invoke(Command(resume="Europe"), _thread())
+    assert state["target_regions"] == ["Europe"]
+
+
+def test_location_hint_negative_correction_and_ambiguous_repeat(monkeypatch):
+    facts = _hint_facts()
+    tiers, ask_calls = _wire(
+        monkeypatch,
+        questions=[],
+        parses=[SlotUpdate(degree_intent="phd", field="computer science")],
+    )
+    g = build_graph()
+    g.invoke({"cv_facts": facts}, _thread())
+    state = g.invoke(Command(resume="a PhD in computer science"), _thread())
+    turns = state["turns"]
+
+    state = g.invoke(Command(resume="maybe"), _thread())
+    assert state["messages"][-1] == ("ai", render_location_hint(facts.location_evidence[0]))
+    assert state["turns"] == turns and state["location_hint_pending"] is True
+    assert tiers["parse"] == ["light"] and ask_calls == []
+
+    state = g.invoke(Command(resume="no, I am in Germany"), _thread())
+    assert state["cv_facts"].current_location == "Germany"
+    assert state["location_hint_rejected"] is True
+    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])
+    assert tiers["parse"] == ["light"] and ask_calls == []
+
+
+def test_explicit_cv_location_skips_hint(monkeypatch):
+    tiers, ask_calls = _wire(
+        monkeypatch,
+        questions=["Which region would you consider?"],
+        parses=[SlotUpdate(degree_intent="phd", field="computer science")],
+    )
+    g = build_graph()
+    g.invoke({"cv_facts": _hint_facts("Jakarta, Indonesia")}, _thread())
+    state = g.invoke(Command(resume="a PhD in computer science"), _thread())
+    assert state["messages"][-1] == ("ai", "Which region would you consider?")
+    assert not state.get("location_hint_pending")
+    assert tiers["parse"] == ["light"] and len(ask_calls) == 1
+
+
+def test_location_hint_at_turn_nine_leaves_one_region_answer(monkeypatch):
+    facts = _hint_facts()
+    hint_question = render_location_hint(facts.location_evidence[0])
+    monkeypatch.setattr(graph_mod, "shortlist_node", lambda s: {"handed_off": True})
+    tiers, ask_calls = _wire(
+        monkeypatch,
+        questions=[],
+        parses=[SlotUpdate(target_regions=["Europe"])],
+    )
+    g = build_graph()
+    g.invoke(
+        {
+            "degree_intent": "phd",
+            "field": "computer science",
+            "cv_facts": facts,
+            "location_hint_pending": True,
+            "messages": [("ai", hint_question)],
+            "turns": 9,
+        },
+        _thread(),
+    )
+    state = g.invoke(Command(resume="yes"), _thread())
+    assert state["turns"] == 10 and not state.get("ended")
+    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])
+    assert tiers["parse"] == [] and ask_calls == []
+
+    state = g.invoke(Command(resume="Europe"), _thread())
+    assert state["target_regions"] == ["Europe"]
+    assert state["handed_off"] is True and not state.get("ended")
 
 
 def test_bare_degree_is_rejected_once_then_accepted(monkeypatch):

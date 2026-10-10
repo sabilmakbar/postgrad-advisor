@@ -25,7 +25,7 @@ from app.prompts import (
     CV_REQUEST,
     CV_UNREADABLE,
 )
-from app.state import CVFacts, InterviewState, WorkExperience
+from app.state import CVFacts, InterviewState, LocationEvidence, WorkExperience
 
 _MONTHS = {name.lower(): number for number, name in enumerate(
     ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), 1
@@ -96,6 +96,34 @@ def derive_experience(facts: CVFacts) -> CVFacts:
             "experience": experience,
             "experience_months": total if intervals or duration_only else None,
         }
+    )
+
+
+def select_location_hint(facts: CVFacts) -> LocationEvidence | None:
+    """Select the uniquely newest dated location without using source order."""
+    if facts.current_location:
+        return None
+    dated = []
+    for item in facts.location_evidence:
+        _, interval, _, _ = _parse_tenure(item.tenure)
+        if interval:
+            location = " ".join(item.location.casefold().split())
+            dated.append((interval[1], interval[0], location, item))
+    if not dated:
+        return None
+    newest_end = max(row[0] for row in dated)
+    newest = [row for row in dated if row[0] == newest_end]
+    if len({row[2] for row in newest}) != 1:
+        return None
+    newest_start = max(row[1] for row in newest)
+    winners = [row[3] for row in newest if row[1] == newest_start]
+    return winners[0] if len(winners) == 1 else None
+
+
+def render_location_hint(item: LocationEvidence) -> str:
+    return (
+        f"Your latest CV entry suggests {item.location} based on {item.kind}: "
+        f"{item.label} ({item.tenure}). Is that still your current location?"
     )
 
 
@@ -177,6 +205,12 @@ def extract_facts(cv_text: str) -> CVFacts:
         cv_text, facts.current_location
     ):
         facts = facts.model_copy(update={"current_location": None})
+    facts = facts.model_copy(update={
+        "location_evidence": [
+            item for item in facts.location_evidence
+            if _location_evidence_is_grounded(cv_text, item)
+        ]
+    })
     return derive_experience(facts)
 
 
@@ -192,6 +226,17 @@ def _location_is_grounded(cv_text: str, value: str) -> bool:
             if wanted in following:
                 return True
     return False
+
+
+def _location_evidence_is_grounded(cv_text: str, item: LocationEvidence) -> bool:
+    normalize = lambda value: " ".join(value.casefold().split())
+    text, excerpt = normalize(cv_text), normalize(item.source_excerpt)
+    return bool(
+        excerpt
+        and excerpt in text
+        and all(normalize(value) in excerpt for value in (item.label, item.location, item.tenure))
+        and not re.search(r"\bremote\b", excerpt)
+    )
 
 
 def render_facts(facts: CVFacts) -> str:

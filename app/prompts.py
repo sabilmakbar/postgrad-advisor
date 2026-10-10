@@ -127,7 +127,11 @@ states; leave everything else unset. Copy degree, GPA, publication, English
 test, employer, title, and tenure values faithfully. Set current_location only
 when the CV explicitly states a current residence or current location; exclude
 education, employer, project, citizenship, nationality, and inferred address
-locations. For each position, write one concise summary of the work described.
+locations. For each dated employment or education entry with a location, add
+location_evidence with its kind, a label naming the employer plus role or the
+institution plus degree, location, tenure, and one verbatim source_excerpt that
+contains the label, location, and tenure. For each position, write one concise
+summary of the work described.
 Never infer facts the CV does not state. Do not calculate months or total
 experience; code derives those."""
 

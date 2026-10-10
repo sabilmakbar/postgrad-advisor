@@ -16,6 +16,14 @@ class WorkExperience(BaseModel):
     months: int | None = None
 
 
+class LocationEvidence(BaseModel):
+    kind: Literal["employment", "education"]
+    label: str
+    location: str
+    tenure: str
+    source_excerpt: str
+
+
 class CVFacts(BaseModel):
     """Provisional facts extracted from the CV until ``cv_confirmed``. Doubles
     as the light-tier structured-output schema. Unset fields were not stated."""
@@ -41,6 +49,7 @@ class CVFacts(BaseModel):
         description="Explicit current residence or current location only. Exclude "
         "education, employer, project, citizenship, nationality, and inferred locations.",
     )
+    location_evidence: list[LocationEvidence] = []
     experience: list[WorkExperience] = []
     experience_months: int | None = None
 
@@ -87,6 +96,8 @@ class InterviewState(BaseModel):
     cv_facts: CVFacts | None = None  # extracted/provisional until cv_confirmed
     cv_parsed_path: str | None = None  # upload whose facts _interviewer extracted
     cv_confirmed: bool = False  # story 005: set once the user confirms the echo
+    location_hint_pending: bool = False
+    location_hint_rejected: bool = False
     searches_used: int = 0  # story 005: runtime-search budget counter (AD-3, <=12)
     fit_verdicts: list[ProgramFit] = []  # story 005: built by the fit node
     fit_cursor: int = 0  # next shortlist entry to assess (story 020)

@@ -11,14 +11,25 @@ from app.cv import (
     render_facts,
     render_interview_facts,
     review_facts,
+    select_location_hint,
 )
 from app.fit import FitVerdict, fit_node
 from app.requirements_search import SearchResult
-from app.state import CVFacts, InterviewState, ShortlistEntry, WorkExperience
+from app.state import CVFacts, InterviewState, LocationEvidence, ShortlistEntry, WorkExperience
 
 
 def _position(tenure, title="Scientist", employer="Acme", summary="Built NLP systems"):
     return WorkExperience(employer=employer, title=title, tenure=tenure, summary=summary)
+
+
+def _evidence(kind, label, location, tenure, excerpt=None):
+    return LocationEvidence(
+        kind=kind,
+        label=label,
+        location=location,
+        tenure=tenure,
+        source_excerpt=excerpt or f"{label} | {location} | {tenure}",
+    )
 
 
 def test_supported_tenures_and_unparseable_value(monkeypatch):
@@ -137,6 +148,49 @@ Citizenship: United Kingdom
 Nationality: British
 Address: London, United Kingdom"""
     assert extract_facts(cv_text).current_location is None
+
+
+def test_location_evidence_is_grounded_and_remote_is_rejected(monkeypatch):
+    kept = _evidence("employment", "Acme — Engineer", "Berlin, Germany", "2022 - Present")
+    remote = _evidence(
+        "employment", "Remote Co — Engineer", "London, United Kingdom", "2023 - Present"
+    )
+    unsupported = _evidence("education", "Example U — MSc", "Paris, France", "2020 - 2021")
+    monkeypatch.setattr(
+        cv_mod,
+        "structured",
+        lambda schema, tier="light": RunnableLambda(
+            lambda _: CVFacts(location_evidence=[kept, remote, unsupported])
+        ),
+    )
+    text = "Acme — Engineer | Berlin, Germany | 2022 - Present\nRemote Co — Engineer | London, United Kingdom | 2023 - Present | remote"
+    facts = extract_facts(text)
+    assert facts.location_evidence == [kept]
+
+
+def test_location_hint_uses_newest_date_across_kinds_and_explicit_location_wins(monkeypatch):
+    monkeypatch.setattr(cv_mod, "_today", lambda: date(2026, 10, 10))
+    employment = _evidence("employment", "Acme — Engineer", "Berlin, Germany", "2022 - 2024")
+    education = _evidence("education", "Oxford — DPhil", "Oxford, United Kingdom", "2024 - Present")
+    facts = CVFacts(location_evidence=[employment, education])
+    assert select_location_hint(facts) == education
+    assert select_location_hint(facts.model_copy(update={"current_location": "Jakarta, Indonesia"})) is None
+
+
+def test_location_hint_rejects_conflicting_ties_complete_ties_and_unparseable_dates():
+    berlin = _evidence("employment", "A", "Berlin, Germany", "2022 - 2024")
+    paris = _evidence("education", "B", "Paris, France", "2023 - 2024")
+    duplicate = _evidence("education", "C", "Berlin, Germany", "2022 - 2024")
+    unknown = _evidence("employment", "D", "Rome, Italy", "since graduation")
+    assert select_location_hint(CVFacts(location_evidence=[berlin, paris])) is None
+    assert select_location_hint(CVFacts(location_evidence=[berlin, duplicate])) is None
+    assert select_location_hint(CVFacts(location_evidence=[unknown])) is None
+
+
+def test_location_hint_same_location_tie_uses_latest_start():
+    older = _evidence("employment", "A", "Berlin, Germany", "2020 - 2024")
+    newer = _evidence("education", "B", "Berlin, Germany", "2022 - 2024")
+    assert select_location_hint(CVFacts(location_evidence=[older, newer])) == newer
 
 
 def test_confirmed_correction_must_be_re_echoed_before_later_confirmation(monkeypatch):
