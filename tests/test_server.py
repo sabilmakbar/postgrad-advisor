@@ -434,6 +434,18 @@ def test_page_has_exact_silence_lifecycle_and_legacy_error_fallback():
     assert "This turn is taking unusually long." in page
 
 
+def test_page_keeps_turn_status_transient():
+    page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+    finish = page.split("function finish(state) {", 1)[1].split("const OFFLINE", 1)[0]
+
+    assert finish.splitlines().count("  state.traceEl.remove();") == 1
+    assert 'add("trace",' not in page
+    assert 'event === "status"' in page
+    assert 'state.traceEl.textContent = state.trace.join(" › ");' in page
+    assert 'state.finals.some(([role]) => role === "error")' in finish
+    assert "state.timedOut = true;" in page and "controller.abort();" in page
+
+
 def test_message_without_session_is_rejected(client):
     response = client(FakeGraph()).post("/chat", json={"message": "hello"})
     assert response.status_code == 400

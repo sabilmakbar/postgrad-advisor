@@ -399,7 +399,7 @@ function finish(state) {
   state.terminal?.();
   if (state.dropPh) { state.dropPh(); state.dropPh = null; }
   if (state.finals.some(([role]) => role === "error")) state.trace = [];
-  if (!state.trace.length) state.traceEl.remove();
+  state.traceEl.remove();
   // Replace the painted draft with the authoritative messages; keep it when
   // nothing replaces it (mid-stream error: painted prose + error line stay).
   // Placeholder text never counts here, so an error before the first token
@@ -408,8 +408,6 @@ function finish(state) {
     state.draft.remove();
   else
     formatAgentText(state.body, state.body.textContent);
-  if (state.trace.length && state.finals.some(([role]) => role === "ai"))
-    add("trace", state.trace.join(" › "));
   for (const [role, text] of state.finals) {
     if (role === "error") addError(text, state.sent);
     else add(role, text);
