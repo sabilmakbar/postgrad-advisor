@@ -436,8 +436,14 @@ def test_page_has_exact_silence_lifecycle_and_legacy_error_fallback():
 
 def test_page_keeps_turn_status_transient():
     page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+    painter = page.split("function startPainter(state) {", 1)[1].split("function finish(state) {", 1)[0]
     finish = page.split("function finish(state) {", 1)[1].split("const OFFLINE", 1)[0]
 
+    assert """      if (state.dropPh) {
+        state.dropPh();
+        state.dropPh = null;
+        state.traceEl.remove();
+      }""" in painter
     assert finish.splitlines().count("  state.traceEl.remove();") == 1
     assert 'add("trace",' not in page
     assert 'event === "status"' in page

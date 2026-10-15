@@ -380,7 +380,11 @@ function handleEvent(block, state) {
 function startPainter(state) {
   return setInterval(() => {
     if (state.queue) {
-      if (state.dropPh) { state.dropPh(); state.dropPh = null; }  // first real token wins
+      if (state.dropPh) {
+        state.dropPh();
+        state.dropPh = null;
+        state.traceEl.remove();
+      }
       const n = Math.max(2, Math.ceil(state.queue.length / 40));  // catch up on long backlogs
       const stick = atBottom();
       state.body.textContent += state.queue.slice(0, n);
