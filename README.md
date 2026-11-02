@@ -54,6 +54,14 @@ The agent asks **one question per turn**, starting with degree intent (taught ma
 research master's, or PhD), then field, then target regions. Vague answers get a narrower
 follow-up rather than a guess. The interview ends after at most **10 agent turns**.
 
+For relative preferences such as "nearby" or "the broader region", the model uses your
+confirmed current location to propose named countries from the dataset. It shows the list
+and asks you to confirm before setting study destinations. You can reject it or name other
+destinations. Subregions such as Western Europe work through the same proposal step;
+country names are validated in code. Dataset coverage may omit countries in that area.
+Requests within a country, such as eastern US, require university city/state information
+that this snapshot does not contain, so the advisor asks for an alternative scope.
+
 - Tone should be realistic, not encouraging: it names difficulties and offers alternatives.
   "Realistically this will be demanding, consider X" is right; "you'll do great!" is a defect.
 - Asking about a **postdoc** gets a plain decline (postdocs are supervisor- and funding-driven,

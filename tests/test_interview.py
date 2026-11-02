@@ -15,16 +15,23 @@ import app.graph as graph_mod
 from app.graph import _REQUIRED_SLOTS, build_graph
 from app.prompts import (
     CV_REQUEST,
+    DEGREE_INTENT_CLARIFICATION,
     FIRST_QUESTION,
     FIXED_INTERVIEW_QUESTIONS,
+    LOCATION_INFERENCE_UNAVAILABLE,
+    LOCATION_NAME_REQUIRED,
     POSTDOC_DECLINE,
     TURN_CAP_MESSAGE,
+    current_location_region_question,
+    region_proposal_question,
+    REGION_SCOPE_UNSUPPORTED,
+    REGION_PROPOSAL_UNAVAILABLE,
 )
 from app.cv import render_location_hint
 from app.state import CVFacts, InterviewState, LocationEvidence, SlotUpdate
 
 
-def _wire(monkeypatch, questions, parses):
+def _wire(monkeypatch, questions, parses, parse_calls=None):
     """Replace the graph's model factories with scripted fakes.
 
     Scripts are strict iterators: an extra ask or parse raises StopIteration,
@@ -45,7 +52,12 @@ def _wire(monkeypatch, questions, parses):
     def fake_structured(schema, tier="heavy"):
         assert schema is SlotUpdate
         tiers["parse"].append(tier)
-        return RunnableLambda(lambda _: next(p_iter))
+        def _parse(msgs):
+            if parse_calls is not None:
+                parse_calls.append(msgs)
+            return next(p_iter)
+
+        return RunnableLambda(_parse)
 
     monkeypatch.setattr(graph_mod, "chat", fake_chat)
     monkeypatch.setattr(graph_mod, "structured", fake_structured)
@@ -155,7 +167,11 @@ def test_vague_region_answer_rejects_model_invention(monkeypatch, answer, parsed
     state = g.invoke(Command(resume=answer), _thread())
     assert state.get("target_regions") in (None, [])
     assert not state.get("handed_off")
-    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])
+    expected = (
+        LOCATION_NAME_REQUIRED if answer == "near my current location"
+        else FIXED_INTERVIEW_QUESTIONS["target_regions"]
+    )
+    assert state["messages"][-1] == ("ai", expected)
 
 
 def test_mixed_region_answer_keeps_only_explicit_supported_values(monkeypatch):
@@ -197,7 +213,9 @@ def test_location_hint_affirmation_then_separate_region_turn(monkeypatch):
     state = g.invoke(Command(resume="yes"), _thread())
     assert state["cv_facts"].current_location == "Berlin, Germany"
     assert state.get("target_regions") in (None, [])
-    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])
+    assert state["messages"][-1] == (
+        "ai", current_location_region_question("Berlin, Germany")
+    )
     assert state["turns"] == 2
     assert tiers["parse"] == ["light"] and ask_calls == []
 
@@ -225,22 +243,52 @@ def test_location_hint_negative_correction_and_ambiguous_repeat(monkeypatch):
     state = g.invoke(Command(resume="no, I am in Germany"), _thread())
     assert state["cv_facts"].current_location == "Germany"
     assert state["location_hint_rejected"] is True
-    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])
+    assert state["messages"][-1] == (
+        "ai", current_location_region_question("Germany")
+    )
     assert tiers["parse"] == ["light"] and ask_calls == []
 
 
-def test_explicit_cv_location_skips_hint(monkeypatch):
+def test_explicit_cv_location_informs_but_does_not_fill_study_region(monkeypatch):
     tiers, ask_calls = _wire(
         monkeypatch,
-        questions=["Which region would you consider?"],
+        questions=[],
         parses=[SlotUpdate(degree_intent="phd", field="computer science")],
     )
     g = build_graph()
     g.invoke({"cv_facts": _hint_facts("Jakarta, Indonesia")}, _thread())
     state = g.invoke(Command(resume="a PhD in computer science"), _thread())
-    assert state["messages"][-1] == ("ai", "Which region would you consider?")
+    assert state["messages"][-1] == (
+        "ai",
+        current_location_region_question("Jakarta, Indonesia"),
+    )
+    assert state.get("target_regions") in (None, [])
     assert not state.get("location_hint_pending")
-    assert tiers["parse"] == ["light"] and len(ask_calls) == 1
+    assert tiers["parse"] == ["light"] and ask_calls == []
+
+
+def test_cv_location_inference_request_without_evidence_does_not_repeat(monkeypatch):
+    tiers, ask_calls = _wire(
+        monkeypatch,
+        questions=[],
+        parses=[SlotUpdate()],
+    )
+    g = build_graph()
+    g.invoke(
+        {
+            "degree_intent": "masters_coursework",
+            "field": "computer science",
+            "cv_facts": CVFacts(degree="BSc Mathematics"),
+            "messages": [("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])],
+            "turns": 4,
+        },
+        _thread(),
+    )
+    state = g.invoke(Command(resume="can you infer based on my CV?"), _thread())
+
+    assert state["messages"][-1] == ("ai", LOCATION_INFERENCE_UNAVAILABLE)
+    assert state.get("target_regions") in (None, [])
+    assert tiers["parse"] == ["light"] and ask_calls == []
 
 
 def test_location_hint_at_turn_nine_leaves_one_region_answer(monkeypatch):
@@ -266,12 +314,147 @@ def test_location_hint_at_turn_nine_leaves_one_region_answer(monkeypatch):
     )
     state = g.invoke(Command(resume="yes"), _thread())
     assert state["turns"] == 10 and not state.get("ended")
-    assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])
+    assert state["messages"][-1] == (
+        "ai", current_location_region_question("Berlin, Germany")
+    )
     assert tiers["parse"] == [] and ask_calls == []
 
     state = g.invoke(Command(resume="Europe"), _thread())
     assert state["target_regions"] == ["Europe"]
     assert state["handed_off"] is True and not state.get("ended")
+
+
+@pytest.fixture
+def limited_region_dataset(monkeypatch):
+    dataset = graph_mod.load_dataset()
+    limited = dataset.model_copy(update={
+        "universities": [u for u in dataset.universities if u.country in {"Malaysia", "Singapore"}]
+    })
+    monkeypatch.setattr(graph_mod, "load_dataset", lambda: limited)
+
+
+def test_nearby_proposal_is_validated_and_confirmed_before_handoff(monkeypatch, limited_region_dataset):
+    facts = _hint_facts().model_copy(update={"location_evidence": [LocationEvidence(
+        kind="employment", label="Acme — Engineer", location="Kuala Lumpur, Malaysia",
+        tenure="2022 - Present", source_excerpt="Acme — Engineer Kuala Lumpur, Malaysia 2022 - Present",
+    )]})
+    monkeypatch.setattr(graph_mod, "shortlist_node", lambda s: {"handed_off": True})
+    calls = []
+    _, ask_calls = _wire(monkeypatch, questions=[], parses=[
+        SlotUpdate(region_proposal=["Malaysia", "Singapore", "Atlantis", "Asia", "Thailand"],
+                   region_label="Southeast Asia"),
+        SlotUpdate(region_confirmation="accept"),
+    ], parse_calls=calls)
+    g = build_graph()
+    g.invoke({
+        "degree_intent": "masters_research", "field": "computer science",
+        "cv_facts": facts, "location_hint_pending": True, "turns": 3,
+        "messages": [("ai", render_location_hint(facts.location_evidence[0]))],
+    }, _thread())
+    state = g.invoke(Command(resume="yes"), _thread())
+    assert state.get("target_regions") in (None, [])
+    assert state["messages"][-1] == ("ai", current_location_region_question("Kuala Lumpur, Malaysia"))
+    state = g.invoke(Command(resume="current country or nearby countries is okay"), _thread())
+    assert state.get("target_regions") in (None, [])
+    assert not state.get("handed_off")
+    assert state["pending_region_countries"] == ["Malaysia", "Singapore"]
+    assert state["messages"][-1] == ("ai", region_proposal_question("Southeast Asia", ["Malaysia", "Singapore"]))
+    assert "Confirmed current location: Kuala Lumpur, Malaysia" in calls[0][1][1]
+    assert "Available dataset countries:" in calls[0][1][1]
+    state = g.invoke(Command(resume="yes"), _thread())
+    assert state["target_regions"] == ["Malaysia", "Singapore"]
+    assert state["pending_region_countries"] == [] and state["pending_region_label"] is None
+    assert state["handed_off"] is True and ask_calls == []
+    assert "Pending proposal: Southeast Asia: ['Malaysia', 'Singapore']" in calls[1][1][1]
+
+
+@pytest.mark.parametrize(("answer", "parsed", "expected", "pending"), [
+    ("its broader region", SlotUpdate(region_label="Southeast Asia", region_proposal=["Malaysia", "Singapore"]), [], ["Malaysia", "Singapore"]),
+    ("current country only", SlotUpdate(region_label="current country", region_proposal=["Malaysia"]), [], ["Malaysia"]),
+    ("yes", SlotUpdate(region_confirmation="accept", target_regions=["Europe"]), [], []),
+    ("can check on my current country?", SlotUpdate(target_regions=["Europe"]), [], []),
+])
+def test_inferred_geography_stays_pending_without_confirmation(monkeypatch, answer, parsed, expected, pending):
+    _wire(monkeypatch, questions=[], parses=[parsed])
+    g = build_graph()
+    g.invoke({
+        "degree_intent": "masters_research", "field": "computer science",
+        "cv_facts": _hint_facts("Kuala Lumpur, Malaysia"), "turns": 3,
+        "messages": [("ai", current_location_region_question("Kuala Lumpur, Malaysia"))],
+    }, _thread())
+    state = g.invoke(Command(resume=answer), _thread())
+    assert state.get("target_regions", []) == expected
+    assert state.get("pending_region_countries", []) == pending
+    assert not state.get("handed_off")
+
+
+@pytest.mark.parametrize(("answer", "parsed", "expected"), [
+    ("no", SlotUpdate(region_confirmation="reject"), []),
+    ("no, Europe instead", SlotUpdate(region_confirmation="reject", target_regions=["Europe"]), ["Europe"]),
+])
+def test_geography_proposal_can_be_rejected_or_replaced(monkeypatch, answer, parsed, expected):
+    monkeypatch.setattr(graph_mod, "shortlist_node", lambda s: {"handed_off": True})
+    _wire(monkeypatch, questions=[], parses=[parsed])
+    g = build_graph()
+    g.invoke({
+        "degree_intent": "masters_research", "field": "computer science",
+        "cv_facts": _hint_facts("Kuala Lumpur, Malaysia"), "turns": 3,
+        "pending_region_countries": ["Malaysia", "Singapore"], "pending_region_label": "Southeast Asia",
+        "messages": [("ai", region_proposal_question("Southeast Asia", ["Malaysia", "Singapore"]))],
+    }, _thread())
+    state = g.invoke(Command(resume=answer), _thread())
+    assert state.get("target_regions", []) == expected
+    assert state["pending_region_countries"] == []
+    assert bool(state.get("handed_off")) == bool(expected)
+
+
+@pytest.mark.parametrize(("answer", "parsed", "has_proposal"), [
+    ("Western Europe", SlotUpdate(target_regions=["Europe"], region_label="Western Europe", region_proposal=["France", "Germany"]), True),
+    ("somewhere nearby", SlotUpdate(region_label="Western Europe", region_proposal=["France", "Germany"]), False),
+])
+def test_named_subregion_needs_no_residence_but_relative_request_does(monkeypatch, answer, parsed, has_proposal):
+    _wire(monkeypatch, questions=[], parses=[parsed])
+    g = build_graph()
+    g.invoke({
+        "degree_intent": "masters_research", "field": "computer science", "turns": 3,
+        "messages": [("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])],
+    }, _thread())
+    state = g.invoke(Command(resume=answer), _thread())
+    assert bool(state.get("pending_region_countries")) == has_proposal
+    assert state.get("target_regions") in (None, [])
+
+
+def test_eastern_us_does_not_silently_become_all_us(monkeypatch):
+    _wire(monkeypatch, questions=[], parses=[SlotUpdate(
+        target_regions=["US"], region_proposal=["United States"], region_scope_unsupported=True,
+    )])
+    g = build_graph()
+    g.invoke({
+        "degree_intent": "masters_research", "field": "computer science", "turns": 3,
+        "messages": [("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"])],
+    }, _thread())
+    state = g.invoke(Command(resume="eastern US"), _thread())
+    assert state.get("target_regions") in (None, [])
+    assert state["messages"][-1] == ("ai", REGION_SCOPE_UNSUPPORTED)
+
+
+def test_uncovered_geography_revision_discards_the_old_proposal(monkeypatch, limited_region_dataset):
+    _wire(monkeypatch, questions=[], parses=[SlotUpdate(
+        region_label="Central America", region_proposal=["Costa Rica", "Panama"],
+    ), SlotUpdate(region_confirmation="accept")])
+    g = build_graph()
+    g.invoke({
+        "degree_intent": "masters_research", "field": "computer science", "turns": 3,
+        "pending_region_countries": ["Malaysia", "Singapore"], "pending_region_label": "Southeast Asia",
+        "cv_facts": _hint_facts("Kuala Lumpur, Malaysia"),
+        "messages": [("ai", region_proposal_question("Southeast Asia", ["Malaysia", "Singapore"]))],
+    }, _thread())
+    state = g.invoke(Command(resume="Central America instead"), _thread())
+    assert state["pending_region_countries"] == []
+    assert state["messages"][-1] == ("ai", REGION_PROPOSAL_UNAVAILABLE)
+    state = g.invoke(Command(resume="yes"), _thread())
+    assert state.get("target_regions") in (None, [])
+    assert not state.get("handed_off")
 
 
 def test_bare_degree_is_rejected_once_then_accepted(monkeypatch):
@@ -295,6 +478,22 @@ def test_bare_degree_is_rejected_once_then_accepted(monkeypatch):
     assert state["messages"][-1] == ("ai", FIXED_INTERVIEW_QUESTIONS["field"])
     assert len(ask_calls) == 1
     assert tiers["parse"] == ["light", "light"]
+
+
+def test_vague_degree_reply_cannot_repeat_the_opening_question(monkeypatch):
+    _wire(
+        monkeypatch,
+        questions=[FIRST_QUESTION],
+        parses=[SlotUpdate()],
+    )
+    g = build_graph()
+    g.invoke({}, _thread())
+    state = g.invoke(
+        Command(resume="I'm split between an MRes, PhD, and MSc"),
+        _thread(),
+    )
+
+    assert state["messages"][-1] == ("ai", DEGREE_INTENT_CLARIFICATION)
 
 
 @pytest.mark.parametrize(
@@ -378,7 +577,7 @@ def test_fixed_route_preserves_user_authored_canonical_degree_literal(monkeypatc
     assert "masters_research" not in state["messages"][-1][1]
 
 
-def test_fixed_field_copy_keeps_distinct_programme_directions(monkeypatch):
+def test_fixed_field_question_is_discipline_neutral_without_profile(monkeypatch):
     _, ask_calls = _wire(
         monkeypatch,
         questions=[],
@@ -390,9 +589,41 @@ def test_fixed_field_copy_keeps_distinct_programme_directions(monkeypatch):
 
     question = state["messages"][-1][1]
     assert ask_calls == []
-    assert "computer-science foundations" in question
-    assert "mathematical or statistical foundations" in question
-    assert "application-led or hybrid" in question
+    assert "Any discipline is welcome" in question
+    assert "economics" in question
+    assert "computer science" in question
+    assert "Which study direction fits you best" not in question
+
+
+def test_new_focus_is_reconciled_with_existing_field_before_location(monkeypatch):
+    _, ask_calls = _wire(
+        monkeypatch,
+        questions=["Should we keep statistics as the field, or revise it toward AI systems?"],
+        parses=[SlotUpdate(focus_area="model and agent evaluation")],
+    )
+    g = build_graph()
+    g.invoke(
+        {
+            "degree_intent": "masters_coursework",
+            "field": "statistics",
+            "cv_facts": CVFacts(degree="BSc Mathematics"),
+            "messages": [("ai", "Which specialisation do you want?")],
+            "turns": 4,
+        },
+        _thread(),
+    )
+    state = g.invoke(
+        Command(resume="model and agent evaluation, including hallucinations"),
+        _thread(),
+    )
+
+    assert state["messages"][-1] == (
+        "ai",
+        "Should we keep statistics as the field, or revise it toward AI systems?",
+    )
+    context = ask_calls[0][-1][1]
+    assert "reconcile the newly stated focus area" in context
+    assert "target regions" in context
 
 
 def test_postdoc_answer_gets_scope_decline(monkeypatch):

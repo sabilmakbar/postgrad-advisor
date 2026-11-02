@@ -85,6 +85,8 @@ class InterviewState(BaseModel):
     field: str | None = None
     focus_area: str | None = None
     target_regions: list[str] = []
+    pending_region_countries: list[str] = []
+    pending_region_label: str | None = None
     constraints: list[str] = []
     messages: list[tuple[str, str]] = []  # (role, content) conversation log
     turns: int = 0  # agent question turns taken; capped in graph logic
@@ -123,6 +125,12 @@ class SlotUpdate(BaseModel):
     target_regions: list[str] = Field(
         [], description="Countries or regions the user wants to study in."
     )
+    region_proposal: list[str] = Field(
+        [], description="Dataset countries proposed for a geographic interpretation; not yet confirmed."
+    )
+    region_label: str | None = Field(None, max_length=100)
+    region_confirmation: Literal["accept", "reject"] | None = None
+    region_scope_unsupported: bool = False
     constraints: list[str] = Field(
         [], description="Constraints the user states: budget, timing, visa, etc."
     )

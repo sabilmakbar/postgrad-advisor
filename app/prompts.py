@@ -25,6 +25,8 @@ recommendations are made.
   programme direction. Clarify concrete factual conflicts neutrally; the user's latest
   explicit statement controls the interview, while CV corrections must also be repeated
   at the later confirmation gate.
+- Without relevant profile facts, keep field questions open to every academic discipline;
+  do not default to STEM examples or choices.
 - Do not recommend or name programs or universities; that comes after the
   interview.
 - Postdoc positions are out of scope. When the user asks about them, a scope
@@ -40,18 +42,78 @@ FIRST_QUESTION = (
     "(coursework), a research master's, or a PhD?"
 )
 
+DEGREE_INTENT_CLARIFICATION = (
+    "Which trade-off matters more for your next step: structured coursework for "
+    "near-term industry growth, or a longer independent research project that could "
+    "lead toward specialist R&D or a PhD?"
+)
+
 FIXED_INTERVIEW_QUESTIONS = {
     "degree_intent": FIRST_QUESTION,
     "field": (
-        "Which study direction fits you best: computer-science foundations such as algorithms, "
-        "systems, and machine learning; mathematical or statistical foundations; or an "
-        "application-led or hybrid programme?"
+        "What academic field or subject would you like to study? Any discipline is welcome, "
+        "including economics, education, public policy, engineering, or computer science."
     ),
     "target_regions": (
         "What is your current country, or which specific countries or regions would you "
         "consider for study?"
     ),
 }
+
+LOCATION_INFERENCE_UNAVAILABLE = (
+    "I couldn't establish one reliable current location from your CV. I can use your "
+    "current city or country as a starting point for nearby study options, but won't "
+    "assume you want to study there. What location should I use?"
+)
+
+LOCATION_NAME_REQUIRED = (
+    "I can use your current city or country as a starting point, but I still need its name. "
+    "Which city or country should I use?"
+)
+
+
+def current_location_region_question(location: str) -> str:
+    return (
+        f"Your current location is {location}. Would you prefer nearby study options, "
+        "or do you have another country or region in mind?"
+    )
+
+
+def region_proposal_question(label: str, countries: list[str]) -> str:
+    return (
+        f"For {label}, I suggest searching {', '.join(countries)} from our current dataset. "
+        "Coverage is limited; this is not a complete list of countries in that region. "
+        "Should I use these countries?"
+    )
+
+
+REGION_SCOPE_UNSUPPORTED = (
+    "Our dataset locates universities by country, so I can't reliably filter within "
+    "a country, such as eastern US. Would you consider the whole country, or another destination?"
+)
+
+REGION_PROPOSAL_UNAVAILABLE = (
+    "I couldn't match that study area to countries in our current dataset. "
+    "Which named country or broader region would you like to try?"
+)
+
+REGION_PARSER_INSTRUCTIONS = """\
+Interpret geography using the conversation and the confirmed current location supplied below.
+Use your geographic knowledge; no fixed region hierarchy is supplied.
+- target_regions: only countries or continents explicitly named as study preferences.
+- For 'nearby', 'current country', 'broader region', or a named subregion such as
+  Western Europe or Southeast Asia, propose explicit country names in region_proposal.
+  Nearby usually means the local subregion, not the entire continent. region_label names
+  your interpretation. Select ONLY from the available dataset countries.
+- Never infer residence from employment or education yourself. Without a confirmed
+  current location, ask for a location before interpreting relative preferences.
+- A proposal is not a chosen destination. Set region_confirmation to accept/reject only
+  when answering the single pending country-list proposal. A bare yes without a pending
+  proposal does not select destinations. Revisions may include a new proposal.
+- If a request needs university city/state data (e.g. eastern US), set
+  region_scope_unsupported=true; do not substitute the whole country.
+- CV lookup requests and requests for explanation are not destination confirmations.
+"""
 
 POSTDOC_DECLINE = (
     "I can't help with postdoc positions — this service covers taught and "
@@ -64,6 +126,9 @@ POSTDOC_DECLINE = (
 PARSER_INSTRUCTIONS = """\
 Extract structured facts from the user's answer to the interviewer's question.
 Fill only the fields the answer clearly supports; leave everything else unset.
+Do not substitute a whole continent or country for a narrower geographic request.
+Use region_proposal for geographic interpretations that need confirmation, and
+region_scope_unsupported for requests needing university city or state data.
 Set postdoc_interest to true only if the user asks about postdoc positions."""
 
 SHORTLIST_INSTRUCTIONS = """\

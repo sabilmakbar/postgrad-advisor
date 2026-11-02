@@ -229,12 +229,16 @@ def _location_is_grounded(cv_text: str, value: str) -> bool:
 
 
 def _location_evidence_is_grounded(cv_text: str, item: LocationEvidence) -> bool:
-    normalize = lambda value: " ".join(value.casefold().split())
+    normalize = lambda value: " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
     text, excerpt = normalize(cv_text), normalize(item.source_excerpt)
+    excerpt_tokens = set(excerpt.split())
     return bool(
         excerpt
         and excerpt in text
-        and all(normalize(value) in excerpt for value in (item.label, item.location, item.tenure))
+        and all(
+            set(normalize(value).split()) <= excerpt_tokens
+            for value in (item.label, item.location, item.tenure)
+        )
         and not re.search(r"\bremote\b", excerpt)
     )
 

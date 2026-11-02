@@ -28,7 +28,7 @@ from app.cv import (
     select_location_hint,
     split_upload,
 )
-from app.dataset import canonical_region, regions_in_text
+from app.dataset import canonical_region, load_dataset, regions_in_text
 from app.fit import MAX_SEARCHES, fit_node
 from app.model_layer import chat, structured
 from app.prompts import (
@@ -37,14 +37,22 @@ from app.prompts import (
     CV_FIXED_ACKS,
     CV_PARSE_FAILED,
     CV_RECEIVED,
+    DEGREE_INTENT_CLARIFICATION,
     FIRST_QUESTION,
     FIT_MORE_PROMPT,
     FIXED_INTERVIEW_QUESTIONS,
     INTERVIEWER_INSTRUCTIONS,
+    LOCATION_INFERENCE_UNAVAILABLE,
+    LOCATION_NAME_REQUIRED,
     PARSER_INSTRUCTIONS,
     PERSONA,
     POSTDOC_DECLINE,
+    REGION_PARSER_INSTRUCTIONS,
+    REGION_PROPOSAL_UNAVAILABLE,
+    REGION_SCOPE_UNSUPPORTED,
     TURN_CAP_MESSAGE,
+    current_location_region_question,
+    region_proposal_question,
 )
 from app.shortlist import degree_intent_label, humanize_degree_text, shortlist_node
 from app.state import (
@@ -77,6 +85,7 @@ CHECKPOINT_TYPES = (
 _SERDE = JsonPlusSerializer(allowed_msgpack_modules=list(CHECKPOINT_TYPES))
 
 _REQUIRED_SLOTS = ("degree_intent", "field", "target_regions")
+
 
 _DEGREE_TERMS = {
     "taught",
@@ -183,13 +192,18 @@ def _interviewer(state: InterviewState) -> dict:
         elif is_negative:
             if corrected:
                 facts = facts.model_copy(update={"current_location": corrected[0]})
+        region_question = (
+            current_location_region_question(facts.current_location)
+            if facts.current_location
+            else FIXED_INTERVIEW_QUESTIONS["target_regions"]
+        )
         return {
             "cv_facts": facts,
             "location_hint_pending": False,
             "location_hint_rejected": is_negative,
             "messages": messages + [
                 ("human", answer),
-                ("ai", FIXED_INTERVIEW_QUESTIONS["target_regions"]),
+                ("ai", region_question),
             ],
             "turns": state.turns + 1,
         }
@@ -199,6 +213,8 @@ def _interviewer(state: InterviewState) -> dict:
     upload, answer = split_upload(answer)
     if upload:
         updates["pending_cv"] = upload
+        updates["pending_region_countries"] = []
+        updates["pending_region_label"] = None
     if upload and not answer:
         # The attachment came alone, so it answers nothing: acknowledge it
         # and leave the pending question standing. It is still in the log
@@ -214,12 +230,18 @@ def _interviewer(state: InterviewState) -> dict:
     # acknowledgement can sit between it and this answer (fix round 2).
     question = next(t for r, t in reversed(messages) if r == "ai" and t not in CV_FIXED_ACKS)
     messages.append(("human", answer))
-    parsed = structured(SlotUpdate, tier="light").invoke(
-        [
-            ("system", PARSER_INSTRUCTIONS),
-            ("human", f"Question asked: {question}\nAnswer: {answer}"),
-        ]
-    )
+    countries = {u.country for u in load_dataset().universities}
+    parser_messages = [("system", PARSER_INSTRUCTIONS)]
+    if _next_open_slot(state) == "target_regions":
+        parser_messages.append(("system", (
+            f"{REGION_PARSER_INSTRUCTIONS}\n"
+            f"Confirmed current location: {getattr(state.cv_facts, 'current_location', None) if not upload else None}.\n"
+            f"Pending proposal: {state.pending_region_label}: {state.pending_region_countries if not upload else []}.\n"
+            f"Available dataset countries: {sorted(countries)}.\n"
+            f"Recent conversation: {messages[-6:]!r}"
+        )))
+    parser_messages.append(("human", f"Question asked: {question}\nAnswer: {answer}"))
+    parsed = structured(SlotUpdate, tier="light").invoke(parser_messages)
     if (
         parsed.degree_intent
         and not state.degree_intent
@@ -234,11 +256,24 @@ def _interviewer(state: InterviewState) -> dict:
             updates[name] = getattr(parsed, name)
             captured[name] = getattr(parsed, name)
     supported_regions = set(regions_in_text(answer))
-    parsed_regions = list(dict.fromkeys(
+    literal_regions = [
         canonical
         for value in parsed.target_regions
         if (canonical := canonical_region(value)) in supported_regions
-    ))
+    ]
+    region_turn = _next_open_slot(state) == "target_regions"
+    if parsed.region_scope_unsupported or parsed.region_proposal:
+        literal_regions = []
+    confirmed_countries = []
+    if region_turn and state.pending_region_countries and not upload:
+        if (
+            parsed.region_confirmation == "accept"
+            and not parsed.region_scope_unsupported and not literal_regions
+        ):
+            confirmed_countries = [c for c in state.pending_region_countries if c in countries]
+        if parsed.region_confirmation or literal_regions or parsed.region_proposal or parsed.region_label:
+            updates.update(pending_region_countries=[], pending_region_label=None)
+    parsed_regions = list(dict.fromkeys(literal_regions + confirmed_countries))
     for name in ("target_regions", "constraints"):
         values = parsed_regions if name == "target_regions" else getattr(parsed, name)
         new = [v for v in values if v not in getattr(state, name)]
@@ -270,18 +305,79 @@ def _interviewer(state: InterviewState) -> dict:
         messages.append(("ai", TURN_CAP_MESSAGE))
         return {**updates, "messages": messages, "ended": True}
 
-    if captured and not merged.cv_facts:
+    reconcile_focus = (
+        "focus_area" in captured
+        and "field" not in captured
+        and bool(merged.field)
+        and _next_open_slot(merged) == "target_regions"
+    )
+    has_profile_evidence = bool(
+        merged.cv_facts
+        and (
+            merged.cv_facts.degree
+            or merged.cv_facts.publications
+            or merged.cv_facts.experience
+        )
+    )
+    if (
+        captured and not has_profile_evidence and not reconcile_focus
+        and _next_open_slot(merged) != "target_regions"
+    ):
         messages.append(("ai", decline + _fixed_interview_question(merged)))
         return {**updates, "messages": messages, "turns": state.turns + 1}
 
-    if _next_open_slot(merged) == "target_regions" and not getattr(
-        merged.cv_facts, "current_location", None
-    ):
+    if not reconcile_focus and _next_open_slot(merged) == "target_regions":
+        current_location = getattr(merged.cv_facts, "current_location", None)
+        if parsed.region_scope_unsupported:
+            messages.append(("ai", REGION_SCOPE_UNSUPPORTED))
+            return {**updates, "messages": messages, "turns": state.turns + 1,
+                    "pending_region_countries": [], "pending_region_label": None}
+        label = parsed.region_label or "your preferred study area"
+        normalized_label = " ".join(re.findall(r"[a-z0-9]+", (parsed.region_label or "").casefold()))
+        named_scope = bool(normalized_label) and (
+            f" {normalized_label} " in f" {' '.join(re.findall(r'[a-z0-9]+', answer.casefold()))} "
+        )
+        proposed = list(dict.fromkeys(
+            canonical for value in parsed.region_proposal
+            if (canonical := canonical_region(value, countries)) in countries
+        ))
+        if proposed and (current_location or named_scope) and not upload:
+            messages.append(("ai", region_proposal_question(label, proposed)))
+            return {**updates, "messages": messages, "turns": state.turns + 1,
+                    "pending_region_countries": proposed, "pending_region_label": label}
+        if not proposed and (parsed.region_proposal or named_scope):
+            messages.append(("ai", REGION_PROPOSAL_UNAVAILABLE))
+            return {**updates, "messages": messages, "turns": state.turns + 1}
+        if merged.pending_region_countries:
+            messages.append(("ai", region_proposal_question(
+                merged.pending_region_label or "your preferred study area",
+                merged.pending_region_countries,
+            )))
+            return {**updates, "messages": messages, "turns": state.turns + 1}
+        if current_location:
+            messages.append(("ai", decline + current_location_region_question(current_location)))
+            return {**updates, "messages": messages, "turns": state.turns + 1}
         hint = select_location_hint(merged.cv_facts) if merged.cv_facts else None
         if hint and not merged.location_hint_rejected:
             messages.append(("ai", decline + render_location_hint(hint)))
             return {**updates, "messages": messages, "location_hint_pending": True}
-        messages.append(("ai", decline + _fixed_interview_question(merged)))
+        answer_text = answer.casefold()
+        asked_to_check_cv = bool(
+            re.search(r"\b(?:cv|resume)\b", answer_text)
+            and re.search(r"\b(?:check|look|read|find|infer|guess|identify|tell|see)\b", answer_text)
+        ) or bool(re.search(r"\bbased on (?:my |the )?(?:cv|resume)\b", answer_text))
+        prefers_nearby = bool(
+            re.search(r"\b(?:near|nearby|close|closer|around)\b", answer_text)
+        )
+        if question in {LOCATION_INFERENCE_UNAVAILABLE, LOCATION_NAME_REQUIRED}:
+            next_question = LOCATION_NAME_REQUIRED
+        elif asked_to_check_cv or prefers_nearby:
+            next_question = (
+                LOCATION_INFERENCE_UNAVAILABLE if merged.cv_facts else LOCATION_NAME_REQUIRED
+            )
+        else:
+            next_question = _fixed_interview_question(merged)
+        messages.append(("ai", decline + next_question))
         return {**updates, "messages": messages, "turns": state.turns + 1}
 
     known = {
@@ -293,7 +389,13 @@ def _interviewer(state: InterviewState) -> dict:
         known["degree_intent"] = degree_intent_label(known["degree_intent"])
     if "degree_intent" in captured:
         captured["degree_intent"] = degree_intent_label(captured["degree_intent"])
-    context = f"Captured so far: {known or 'nothing yet'}. Slot to fill next: {_next_open_slot(merged)}."
+    next_step = _next_open_slot(merged)
+    if reconcile_focus:
+        next_step = (
+            "before asking target regions, reconcile the newly stated focus area "
+            "with the previously captured field; ask whether to keep or revise that field"
+        )
+    context = f"Captured so far: {known or 'nothing yet'}. Slot to fill next: {next_step}."
     if captured:
         context += (
             f" Just captured this turn: {captured}. Treat this as an "
@@ -326,7 +428,16 @@ def _interviewer(state: InterviewState) -> dict:
     )
     # .text, not .content: under the web chat's stream_mode="messages" the model
     # streams internally and the aggregated content can be a block list (story 006)
-    messages.append(("ai", decline + humanize_degree_text(reply.text)))
+    reply_text = humanize_degree_text(reply.text)
+    # A vague answer can leave degree_intent open. Do not let the model repeat
+    # the pending opening question verbatim; narrow the decision instead.
+    if (
+        _next_open_slot(merged) == "degree_intent"
+        and " ".join(reply_text.casefold().split())
+        == " ".join(question.casefold().split())
+    ):
+        reply_text = DEGREE_INTENT_CLARIFICATION
+    messages.append(("ai", decline + reply_text))
     return {**updates, "messages": messages, "turns": state.turns + 1}
 
 
