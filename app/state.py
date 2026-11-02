@@ -100,7 +100,8 @@ class InterviewState(BaseModel):
     cv_confirmed: bool = False  # story 005: set once the user confirms the echo
     location_hint_pending: bool = False
     location_hint_rejected: bool = False
-    searches_used: int = 0  # story 005: runtime-search budget counter (AD-3, <=12)
+    searches_used: int = 0  # cumulative across explicitly authorized allowances
+    additional_searches: int = 0  # granted only by choosing to continue at the limit
     fit_verdicts: list[ProgramFit] = []  # story 005: built by the fit node
     fit_cursor: int = 0  # next shortlist entry to assess (story 020)
     fit_continue: bool | None = None  # parsed continuation choice (story 020)

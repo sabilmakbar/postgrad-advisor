@@ -459,7 +459,8 @@ def test_plain_confirmation_still_reaches_fit(monkeypatch, cv_dir):
     state = g.invoke(Command(resume="yes, that's right"), _thread())
 
     assert state["cv_confirmed"] is True
-    assert state["messages"][-1] == ("ai", "VERDICTS")
+    assert state["messages"][-2] == ("ai", "VERDICTS")
+    assert "This assessment is complete" in state["messages"][-1][1]
     assert "__interrupt__" not in state  # run over: the page will see done/over
 
 
@@ -498,7 +499,8 @@ def test_confirmed_corrections_re_echo_until_a_clean_affirmation(monkeypatch, cv
 
     state = g.invoke(Command(resume="yes, that is correct"), _thread())
     assert state["cv_confirmed"] is True
-    assert state["messages"][-1] == ("ai", "VERDICTS")
+    assert state["messages"][-2] == ("ai", "VERDICTS")
+    assert "This assessment is complete" in state["messages"][-1][1]
 
 
 # --- story 011: early extraction informs the interview ---------------------

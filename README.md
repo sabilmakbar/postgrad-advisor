@@ -119,7 +119,15 @@ requirements found, plus **at least one source URL**.
   guessing.
 - There are **never numeric admission odds**. "You have a 70% chance" is prohibited by design and
   scrubbed in code; seeing one is a defect.
-- Searches are capped at 12 per conversation to protect the free tier.
+- The initial allowance is 12 searches. Assessments run in batches of up to five universities.
+  You can continue or skip to the final comparison. At the allowance limit, the app states
+  the additional searches needed for the next batch; only an explicit yes grants them.
+  Unused allowance can cover later batches, each of which still requires a continue choice.
+  Continuation resumes the existing shortlist without adding universities or resetting usage.
+- A final comparison groups sourced verdicts as strong, borderline, then reach, preserving
+  shortlist order within each group. Unknown evidence and unassessed universities stay separate.
+  It explains whether all entries were assessed or you skipped further searches, and clearly
+  announces the end of the chat. It makes no new admissions claims or searches.
 
 ### 5. Errors
 

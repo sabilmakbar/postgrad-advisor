@@ -230,7 +230,20 @@ admission requirements, using only the fetched requirements text provided.
 - Stay realistic per your persona: name gaps plainly, and for a reach verdict
   say what would realistically close the gap."""
 
-FIT_MORE_PROMPT = "Would you like me to assess the next batch of programs? Please answer yes or no."
+FIT_MORE_PROMPT = (
+    "Would you like me to assess the next batch from this same shortlist, or skip "
+    "to the final comparison? Reply yes to continue, or no / skip to finish."
+)
+
+
+def fit_budget_prompt(used: int, allowance: int, remaining: int) -> str:
+    return (
+        f"Your authorized search allowance is exhausted ({used} searches used). "
+        f"Continuing authorizes up to {allowance} additional searches across the remaining "
+        f"universities on this same shortlist, starting with the next {remaining}, including corrective searches. "
+        "Unused allowance carries into later batches, which still require you to choose continue. "
+        "No universities will be added. Reply yes to continue, or no / skip for the final comparison."
+    )
 
 TURN_CAP_MESSAGE = (
     "We've reached this interview's question limit and, realistically, I still "

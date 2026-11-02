@@ -1,5 +1,5 @@
 """Runtime requirements search (story 005, AD-3): Tavily primary, DuckDuckGo
-(`ddgs`) fallback on Tavily failure or missing key (AC 2). The <=12-searches
+(`ddgs`) fallback on Tavily failure or missing key (AC 2). The authorized search
 budget is a counter in graph state, enforced in code by the fit node — not
 here and not in any prompt.
 """

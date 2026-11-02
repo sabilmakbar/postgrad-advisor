@@ -15,8 +15,12 @@ from app.requirements_search import SearchResult, search_requirements
 from app.shortlist import degree_label, humanize_degree_text
 from app.state import FitLabel, InterviewState, ProgramFit
 
-MAX_SEARCHES = 12  # AD-3: per-conversation runtime-search cap, enforced here
+MAX_SEARCHES = 12  # initial allowance; continuation requires explicit authorization
 FIT_BATCH_SIZE = 5
+
+
+def search_limit(state: InterviewState) -> int:
+    return MAX_SEARCHES + max(state.additional_searches, 0)
 
 # AD-4 / SC-005: numeric admission odds in any spelling — "70%", "70 percent",
 # "chance(s) of 7 in 10".
@@ -139,26 +143,66 @@ def _ground(university: str, judged: FitVerdict, found) -> ProgramFit:
     )
 
 
-def _render(verdicts: list[ProgramFit], pending: list[str]) -> str:
+def _verdict_line(verdict: ProgramFit) -> str:
+    reasons = "; ".join(humanize_degree_text(r) for r in _scrub(verdict.reasons))
+    line = f"- {verdict.university}: {verdict.label} — {reasons}"
+    if verdict.sources:
+        line += f" (sources: {', '.join(verdict.sources)})"
+    return line
+
+
+def _render(verdicts: list[ProgramFit], pending: list[str], budget_exhausted=False) -> str:
     lines = []
     for v in verdicts:
-        reasons = "; ".join(humanize_degree_text(reason) for reason in v.reasons)
-        line = f"- {v.university}: {v.label} — {reasons}"
-        if v.sources:
-            line += f" (sources: {', '.join(v.sources)})"
-        lines.append(line)
+        lines.append(_verdict_line(v))
     rendered = (
         "Here is how your confirmed CV facts stack up against each shortlisted "
         "program:\n" + "\n".join(lines)
     )
     if pending:
-        rendered += "\n\nPending assessment: " + ", ".join(pending)
+        caption = "Not assessed yet (search allowance exhausted): " if budget_exhausted else "Pending assessment: "
+        rendered += "\n\n" + caption + ", ".join(pending)
     return rendered
+
+
+def fit_summary(state: InterviewState) -> dict:
+    """Close with stored evidence only; no searches, model calls, or new entries."""
+    pending = [e.university for e in state.shortlist[state.fit_cursor:]]
+    if not pending:
+        ending = "All shortlisted universities have been assessed."
+    elif state.searches_used >= search_limit(state):
+        ending = "The search allowance was exhausted, and you chose to skip further searches."
+    else:
+        ending = "You chose to skip the remaining assessments."
+    lines = ["Final comparison", ending,
+             "Options are grouped by recorded fit: strong, borderline, then reach. "
+             "Ties retain the original shortlist order. These labels are not admission probabilities."]
+    by_name = {v.university: v for v in state.fit_verdicts}
+    ordered = [by_name[e.university] for e in state.shortlist if e.university in by_name]
+    ranked = [v for label in ("strong", "borderline", "reach") for v in ordered
+              if v.label == label and v.sources and v.reasons]
+    lines.append("\nBest-supported options first:")
+    lines.extend(_verdict_line(v) for v in ranked)
+    if not ranked:
+        lines.append("No sufficiently sourced fit verdict is available to rank.")
+    unknown = [v for v in ordered if v not in ranked]
+    if unknown:
+        lines.append("\nEvidence incomplete — this does not mean poor fit:")
+        lines.extend(_verdict_line(v.model_copy(update={"label": "unknown"})) for v in unknown)
+    if pending:
+        lines.append("\nNot assessed — " + ("search allowance exhausted" if state.searches_used >= search_limit(state)
+                     else "you skipped further assessment") + ": " + ", ".join(pending))
+    lines.append("\nNext actions: verify the cited official requirements for your exact degree and intake, "
+                 "and review the evidence gaps in the assessments above.")
+    if state.cv_facts and not state.cv_facts.english_test:
+        lines.append("Your confirmed CV has no English test score; check whether each programme requires "
+                     "a test or accepts another form of evidence.")
+    lines.append("This assessment is complete for this run. This chat has ended.")
+    return {"messages": state.messages + [("ai", "\n".join(lines))]}
 
 
 def fit_batch(state: InterviewState) -> dict:
     """Assess at most five programs from the cursor within the shared budget."""
-    chain = structured(FitVerdict, tier="heavy")
     facts = state.cv_facts
     cv = {
         "degree": facts.degree,
@@ -172,12 +216,16 @@ def fit_batch(state: InterviewState) -> dict:
         "experience_months": facts.experience_months,
     }
     cv = {k: v for k, v in cv.items() if v is not None and v != []}
-    used = min(max(state.searches_used, 0), MAX_SEARCHES)
+    limit = search_limit(state)
+    used = min(max(state.searches_used, 0), limit)
     verdicts = list(getattr(state, "fit_verdicts", []))
     cursor = min(max(getattr(state, "fit_cursor", 0), 0), len(state.shortlist))
     total = len(state.shortlist)
     stop = min(cursor + FIT_BATCH_SIZE, total)
+    chain = structured(FitVerdict, tier="heavy") if used < limit and cursor < total else None
     for position in range(cursor, stop):
+        if used >= limit:
+            break
         entry = state.shortlist[position]
         try:
             get_stream_writer()(
@@ -186,16 +234,6 @@ def fit_batch(state: InterviewState) -> dict:
         except Exception:
             pass
         query = f"{entry.university} {state.field} admission requirements"
-        if used >= MAX_SEARCHES:
-            verdicts.append(
-                _unknown(
-                    entry.university,
-                    query,
-                    "this conversation's search budget is used up, so I won't guess",
-                )
-            )
-            cursor = position + 1
-            break
         used += 1
         found = search_requirements(query)
         judged = _judge(chain, cv, entry, found, "initial")
@@ -206,7 +244,7 @@ def fit_batch(state: InterviewState) -> dict:
 
         missing = judged.missing_evidence or "admission evidence remains incomplete"
         retry_query = judged.reformulated_query
-        if used >= MAX_SEARCHES:
+        if used >= limit:
             verdicts.append(_unknown_attempts(entry.university, [query], missing))
             cursor = position + 1
             continue
@@ -246,7 +284,7 @@ def fit_batch(state: InterviewState) -> dict:
         "searches_used": used,
         "fit_cursor": cursor,
         "fit_continue": None,
-        "messages": state.messages + [("ai", _render(verdicts, pending))],
+        "messages": state.messages + [("ai", _render(verdicts, pending, used >= limit))],
     }
 
 

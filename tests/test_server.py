@@ -343,7 +343,7 @@ def test_fit_emits_one_progress_status_per_program(monkeypatch):
         SimpleNamespace(university="Two U", country="Y", rank_context="rank 2", degree_type="phd"),
     ]
     state = SimpleNamespace(
-        cv_facts=facts, searches_used=0, shortlist=entries, field="CS", messages=[]
+        cv_facts=facts, searches_used=0, additional_searches=0, shortlist=entries, field="CS", messages=[]
     )
 
     fit.fit_node(state)

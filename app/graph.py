@@ -29,7 +29,7 @@ from app.cv import (
     split_upload,
 )
 from app.dataset import canonical_region, load_dataset, regions_in_text
-from app.fit import MAX_SEARCHES, fit_node
+from app.fit import FIT_BATCH_SIZE, fit_node, fit_summary, search_limit
 from app.model_layer import chat, structured
 from app.prompts import (
     CV_AFTER_CAP,
@@ -40,6 +40,7 @@ from app.prompts import (
     DEGREE_INTENT_CLARIFICATION,
     FIRST_QUESTION,
     FIT_MORE_PROMPT,
+    fit_budget_prompt,
     FIXED_INTERVIEW_QUESTIONS,
     INTERVIEWER_INSTRUCTIONS,
     LOCATION_INFERENCE_UNAVAILABLE,
@@ -450,25 +451,34 @@ def _route(state: InterviewState) -> str:
 
 
 def _fit_batch_route(state: InterviewState) -> str:
-    if state.fit_cursor >= len(state.shortlist) or state.searches_used >= MAX_SEARCHES:
-        return END
+    if state.fit_cursor >= len(state.shortlist):
+        return "fit_summary"
     return "fit_more_ask"
 
 
 def _fit_more_ask(state: InterviewState) -> dict:
-    return {"messages": state.messages + [("ai", FIT_MORE_PROMPT)]}
+    remaining = min(FIT_BATCH_SIZE, len(state.shortlist) - state.fit_cursor)
+    prompt = (
+        fit_budget_prompt(state.searches_used, remaining * 2, remaining)
+        if state.searches_used >= search_limit(state) else FIT_MORE_PROMPT
+    )
+    return {"messages": state.messages + [("ai", prompt)]}
 
 
 def _fit_more_decide(state: InterviewState) -> dict:
     answer = interrupt(state.messages[-1][1])
     normalized = " ".join(str(answer).lower().strip().split())
     if normalized in {"yes", "y", "continue", "please continue"}:
-        return {"fit_continue": True}
-    if normalized in {"no", "n", "stop", "no thanks", "no thank you"}:
-        return {"fit_continue": False}
+        extra = state.additional_searches
+        if state.searches_used >= search_limit(state):
+            extra += 2 * min(FIT_BATCH_SIZE, len(state.shortlist) - state.fit_cursor)
+        return {"fit_continue": True, "additional_searches": extra,
+                "messages": state.messages + [("human", answer)]}
+    if normalized in {"no", "n", "stop", "no thanks", "no thank you", "skip", "skip it", "finish"}:
+        return {"fit_continue": False, "messages": state.messages + [("human", answer)]}
     return {
         "fit_continue": None,
-        "messages": state.messages + [("ai", FIT_MORE_PROMPT)],
+        "messages": state.messages + [("human", answer), ("ai", state.messages[-1][1])],
     }
 
 
@@ -476,7 +486,7 @@ def _fit_more_route(state: InterviewState) -> str:
     if state.fit_continue is True:
         return "fit_batch"
     if state.fit_continue is False:
-        return END
+        return "fit_summary"
     return "fit_more_decide"
 
 
@@ -492,6 +502,7 @@ def build_graph(checkpointer=None):
     g.add_node("fit_batch", fit_node)
     g.add_node("fit_more_ask", _fit_more_ask)
     g.add_node("fit_more_decide", _fit_more_decide)
+    g.add_node("fit_summary", fit_summary)
     g.add_edge(START, "interviewer")
     g.add_conditional_edges("interviewer", _route, ["interviewer", "shortlister", END])
     # story 009 AC 4: the ask is its own superstep, so it is checkpointed before
@@ -509,9 +520,10 @@ def build_graph(checkpointer=None):
         lambda s: "cv_intake" if s.pending_cv else "fit_batch" if s.cv_confirmed else "cv_confirm",
         ["cv_intake", "cv_confirm", "fit_batch"],
     )
-    g.add_conditional_edges("fit_batch", _fit_batch_route, ["fit_more_ask", END])
+    g.add_conditional_edges("fit_batch", _fit_batch_route, ["fit_more_ask", "fit_summary"])
     g.add_edge("fit_more_ask", "fit_more_decide")
     g.add_conditional_edges(
-        "fit_more_decide", _fit_more_route, ["fit_batch", "fit_more_decide", END]
+        "fit_more_decide", _fit_more_route, ["fit_batch", "fit_more_decide", "fit_summary"]
     )
+    g.add_edge("fit_summary", END)
     return g.compile(checkpointer=checkpointer or InMemorySaver(serde=_SERDE))

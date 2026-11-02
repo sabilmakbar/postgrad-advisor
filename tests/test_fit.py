@@ -2,7 +2,7 @@
 
 Covers: local parse of the fixture CVs (AC 1); verdict schema, heavy tier and
 code-grounded source URLs (AC 3); unknown on empty search with the searched
-query shown and NO judge call (AC 4); the <=12 search budget enforced in code
+query shown after bounded corrective retrieval; the initial search allowance enforced in code
 (AC 2); probability scrub proven against a seeded BAD output in the same run
 (AC 5, zero-results rule); and graph wiring shortlist -> CV upload -> confirm
 (with a correction round) -> fit loop -> final summary.
@@ -19,11 +19,11 @@ import app.cv as cv_mod
 import app.fit as fit_mod
 import app.graph as graph_mod
 from app.cv import CVConfirmation, parse_cv
-from app.fit import _PROB_RE, MAX_SEARCHES, FitVerdict, fit_node
-from app.graph import _fit_batch_route, _fit_more_decide, _fit_more_route, build_graph
+from app.fit import _PROB_RE, MAX_SEARCHES, FitVerdict, fit_node, fit_summary
+from app.graph import _fit_batch_route, _fit_more_ask, _fit_more_decide, _fit_more_route, build_graph
 from app.prompts import CV_REQUEST, CV_UNREADABLE, FIT_MORE_PROMPT
 from app.requirements_search import SearchResult
-from app.state import CVFacts, InterviewState, ShortlistEntry, SlotUpdate
+from app.state import CVFacts, InterviewState, ProgramFit, ShortlistEntry, SlotUpdate
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -239,9 +239,9 @@ def test_budget_counter_carries_prior_use(monkeypatch):
     out = fit_node(_state(3, searches_used=MAX_SEARCHES - 1))
     assert len(queries) == 1
     assert out["searches_used"] == MAX_SEARCHES
-    assert [v.label for v in out["fit_verdicts"]] == ["strong", "unknown"]
-    assert out["fit_cursor"] == 2
-    assert "Pending assessment: Uni-2" in out["messages"][-1][1]
+    assert [v.label for v in out["fit_verdicts"]] == ["strong"]
+    assert out["fit_cursor"] == 1
+    assert "Not assessed yet (search allowance exhausted): Uni-1, Uni-2" in out["messages"][-1][1]
 
 
 def test_budget_counter_clamps_invalid_incoming_value(monkeypatch):
@@ -250,7 +250,7 @@ def test_budget_counter_clamps_invalid_incoming_value(monkeypatch):
 
     assert queries == [] and judge_calls == []
     assert out["searches_used"] == MAX_SEARCHES
-    assert out["fit_verdicts"][0].label == "unknown"
+    assert out["fit_verdicts"] == [] and out["fit_cursor"] == 0
 
 
 def test_batches_accumulate_in_order_without_duplicates(monkeypatch):
@@ -276,7 +276,7 @@ def test_batches_accumulate_in_order_without_duplicates(monkeypatch):
 
 @pytest.mark.parametrize(
     ("answer", "choice", "route"),
-    [("yes", True, "fit_batch"), ("no thanks", False, "__end__"), ("maybe", None, "fit_more_decide")],
+    [("yes", True, "fit_batch"), ("no thanks", False, "fit_summary"), ("skip", False, "fit_summary"), ("maybe", None, "fit_more_decide")],
 )
 def test_fit_continuation_is_parsed_in_code(monkeypatch, answer, choice, route):
     monkeypatch.setattr(graph_mod, "interrupt", lambda prompt: answer)
@@ -291,9 +291,68 @@ def test_fit_continuation_is_parsed_in_code(monkeypatch, answer, choice, route):
         assert out["messages"][-1] == ("ai", FIT_MORE_PROMPT)
 
 
-def test_no_continuation_after_final_or_budget_exhausted_batch():
-    assert _fit_batch_route(_state(5, fit_cursor=5)) == "__end__"
-    assert _fit_batch_route(_state(8, fit_cursor=5, searches_used=MAX_SEARCHES)) == "__end__"
+def test_final_batch_gets_summary_but_budget_exhaustion_offers_choice():
+    assert _fit_batch_route(_state(5, fit_cursor=5)) == "fit_summary"
+    assert _fit_batch_route(_state(8, fit_cursor=5, searches_used=MAX_SEARCHES)) == "fit_more_ask"
+
+
+@pytest.mark.parametrize("choice", ["continue", "skip"])
+def test_budget_boundary_waits_for_consent_then_resumes_or_closes(monkeypatch, choice):
+    verdicts = [FitVerdict(label="strong", reasons=[f"evidence-{i}"],
+                           sources=[_url(f"Uni-{i}")], sufficient=True) for i in range(3)]
+    queries, judge_calls, _ = _wire(monkeypatch, verdicts)
+    g = build_graph()
+    cfg = {"configurable": {"thread_id": "budget-choice"}}
+    original = _state(3, searches_used=MAX_SEARCHES - 1)
+    g.update_state(cfg, dict(original), as_node="cv_confirm")
+    state = g.invoke(None, cfg)
+    assert len(queries) == 1 and len(judge_calls) == 1
+    assert state["fit_cursor"] == 1 and state["searches_used"] == MAX_SEARCHES
+    prompt = state["__interrupt__"][0].value
+    assert "4 additional searches" in prompt and "same shortlist" in prompt
+    assert "Unused allowance carries into later batches" in prompt
+    assert state["additional_searches"] == 0
+    state = g.invoke(Command(resume="maybe"), cfg)
+    assert state["__interrupt__"][0].value == prompt and len(queries) == 1
+    state = g.invoke(Command(resume=choice), cfg)
+    assert "__interrupt__" not in state
+    assert [e.university for e in state["shortlist"]] == [e.university for e in original.shortlist]
+    final = state["messages"][-1][1]
+    assert "This assessment is complete" in final and "Pending assessment:" not in final
+    if choice == "continue":
+        assert len(queries) == 3 and state["searches_used"] == MAX_SEARCHES + 2
+        assert state["additional_searches"] == 4 and state["fit_cursor"] == 3
+        assert "All shortlisted universities have been assessed" in final
+    else:
+        assert len(queries) == 1 and state["additional_searches"] == 0
+        assert "Not assessed — search allowance exhausted: Uni-1, Uni-2" in final
+
+
+def test_final_comparison_orders_existing_evidence_and_keeps_unknowns_separate(monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("closing summary must not search or call a model")
+    monkeypatch.setattr(fit_mod, "search_requirements", unexpected)
+    monkeypatch.setattr(fit_mod, "structured", unexpected)
+    verdicts = [ProgramFit(university=f"Uni-{i}", label=label, reasons=[f"recorded-{i}"],
+                          sources=[] if label == "unknown" else [_url(f"Uni-{i}")])
+                for i, label in enumerate(["reach", "unknown", "strong", "borderline"])]
+    state = _state(5, fit_verdicts=verdicts, fit_cursor=4, fit_continue=False)
+    final = fit_summary(state)["messages"][-1][1]
+    assert final.index("Uni-2: strong") < final.index("Uni-3: borderline") < final.index("Uni-0: reach")
+    assert final.index("Evidence incomplete") < final.index("Uni-1: unknown")
+    assert "Not assessed — you skipped further assessment: Uni-4" in final
+    assert all(f"recorded-{i}" in final for i in range(4))
+    assert "This assessment is complete" in final
+    assert state.fit_verdicts == verdicts and state.fit_cursor == 4
+
+
+def test_unsourced_verdict_is_not_promoted_into_final_ranking():
+    state = _state(1, fit_cursor=1, fit_verdicts=[ProgramFit(
+        university="Uni-0", label="strong", reasons=["unsupported assertion"], sources=[]
+    )])
+    final = fit_summary(state)["messages"][-1][1]
+    assert "No sufficiently sourced fit verdict" in final
+    assert "Uni-0: strong" not in final and "Uni-0: unknown" in final
 
 
 # --- bounded evidence recovery (story 016) ----------------------------------
@@ -359,13 +418,14 @@ def test_no_budget_for_correction_names_missing_evidence_without_claiming_retry(
     )
     queries, judge_calls, _ = _wire(monkeypatch, [first])
     out = fit_node(_state(2, searches_used=MAX_SEARCHES - 1))
-    first_verdict, second_verdict = out["fit_verdicts"]
+    first_verdict, = out["fit_verdicts"]
 
     assert queries == ["Uni-0 computer science admission requirements"]
     assert len(judge_calls) == 1 and out["searches_used"] == MAX_SEARCHES
     assert "official thresholds are missing" in first_verdict.reasons[0]
     assert retry not in first_verdict.reasons[0]
-    assert second_verdict.label == "unknown"
+    assert out["fit_cursor"] == 1
+    assert "Not assessed yet (search allowance exhausted): Uni-1" in out["messages"][-1][1]
 
 
 @pytest.mark.parametrize(
