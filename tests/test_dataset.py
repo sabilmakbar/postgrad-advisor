@@ -62,9 +62,9 @@ def test_rejects_bad_continent():
         University.model_validate({**VALID_ENTRY, "continent": "Atlantis"})
 
 
-def test_rejects_empty_fields():
-    with pytest.raises(ValidationError):
-        University.model_validate({**VALID_ENTRY, "fields": []})
+def test_missing_subject_and_degree_coverage_can_be_recorded_as_unknown():
+    u = University.model_validate({**VALID_ENTRY, "fields": [], "degree_types": []})
+    assert u.fields == [] and u.degree_types == []
 
 
 def test_rejects_malformed_rank_band():

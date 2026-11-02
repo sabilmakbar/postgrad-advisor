@@ -9,6 +9,8 @@ import json
 import pytest
 
 from scripts import ingest_qs
+from scripts import refresh_university_pool as refresh
+from app.dataset import load_dataset
 
 COLUMNS = [
     "2026 Rank", "Institution Name", "Country/Territory",
@@ -117,3 +119,214 @@ def test_ambiguous_name_is_not_bound_to_an_arbitrary_row(tmp_path, monkeypatch):
 
     with pytest.raises(SystemExit, match="Testfield University"):
         ingest_qs.main(_csv(tmp_path, twin))
+
+
+def _full_csv(tmp_path):
+    import csv
+    path = tmp_path / "full-qs.csv"
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=[*COLUMNS, "Region"])
+        writer.writeheader()
+        for values in ROWS:
+            row = dict(zip(COLUMNS, values))
+            row["Region"] = "Americas" if row["Country/Territory"] == "Brazil" else "Europe"
+            writer.writerow(row)
+    return path
+
+
+def test_refresh_previews_then_expands_pool_preserving_known_metadata(tmp_path, capsys):
+    target = _dataset(tmp_path, ["Testfield University"])
+    before = target.read_bytes()
+    source = _full_csv(tmp_path)
+    refresh.main(["--world", str(source), "--dataset", str(target)])
+    assert target.read_bytes() == before
+    assert json.loads(capsys.readouterr().out)["added_count"] == 3
+    refresh.main(["--world", str(source), "--dataset", str(target), "--apply"])
+    result = load_dataset(target)
+    assert len(result.universities) == 4 and result.ranking_year == 2026
+    assert result.universities[0].fields == ["engineering"]
+    assert result.universities[1].fields == [] and result.universities[1].degree_types == []
+    assert result.universities[1].continent == "South America"
+    assert "sha256" in result.source
+
+
+@pytest.mark.parametrize(("old", "new"), [("2026 Rank", "Bad Header"), ("1,Testfield", "NOT-RANKED,Testfield"), ("80,90,40", "NaN,90,40")])
+def test_refresh_rejects_malformed_input_without_replacing_cache(tmp_path, old, new):
+    target = _dataset(tmp_path, ["Testfield University"])
+    source = _full_csv(tmp_path)
+    source.write_text(source.read_text().replace(old, new, 1))
+    before = target.read_bytes()
+    with pytest.raises(SystemExit):
+        refresh.main(["--world", str(source), "--dataset", str(target), "--apply"])
+    assert target.read_bytes() == before
+
+
+def test_refresh_imports_subject_evidence_and_subject_only_institution(tmp_path):
+    import csv
+    target = _dataset(tmp_path, ["Testfield University"])
+    subjects = tmp_path / "subject.csv"
+    with subjects.open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["Rank", "Institution Name", "Country/Territory"])
+        writer.writerow(["=2", "Testfield University", "Testland"])
+        writer.writerow(["51-100", "Subject Only University", "Testland"])
+    refresh.main(["--world", str(_full_csv(tmp_path)), "--dataset", str(target),
+                  "--subject", f"computer_science:2025={subjects}", "--apply"])
+    result = {u.university: u for u in load_dataset(target).universities}
+    assert result["Testfield University"].fields == ["engineering", "computer_science"]
+    assert result["Subject Only University"].rank is None
+    evidence = result["Subject Only University"].subject_ranks["computer_science"]
+    assert evidence.rank == "51-100" and evidence.year == 2025
+    assert evidence.source == "subject.csv" and len(evidence.sha256) == 64
+
+
+def test_refresh_report_cannot_overwrite_live_dataset(tmp_path):
+    target = _dataset(tmp_path, ["Testfield University"])
+    before = target.read_bytes()
+    with pytest.raises(SystemExit):
+        refresh.main(["--world", str(_full_csv(tmp_path)), "--dataset", str(target), "--report", str(target)])
+    assert target.read_bytes() == before
+
+
+def test_refresh_refuses_a_partial_source(tmp_path):
+    target = _dataset(tmp_path, [f"Existing {i}" for i in range(20)])
+    before = target.read_bytes()
+    with pytest.raises(SystemExit):
+        refresh.main(["--world", str(_full_csv(tmp_path)), "--dataset", str(target), "--apply"])
+    assert target.read_bytes() == before
+
+
+def test_https_source_is_downloaded_without_model_calls(tmp_path, monkeypatch):
+    import io
+    source = _full_csv(tmp_path)
+    class Response(io.BytesIO):
+        url = "https://example.test/qs.csv"
+    requests = []
+    def fetch(request, timeout):
+        requests.append((request.full_url, timeout))
+        return Response(source.read_bytes())
+    monkeypatch.setattr(refresh, "urlopen", fetch)
+    rows, digest = refresh.read_source("https://example.test/qs.csv")
+    assert len(rows) == 4 and len(digest) == 64
+    assert requests == [("https://example.test/qs.csv", 30)]
+
+
+def test_blank_subject_identity_cannot_replace_dataset(tmp_path):
+    target = _dataset(tmp_path, ["Testfield University"])
+    source = _full_csv(tmp_path)
+    subject = tmp_path / "bad-subject.csv"
+    subject.write_text("Rank,Institution Name,Country/Territory\n1,,Testland\n")
+    before = target.read_bytes()
+    with pytest.raises(SystemExit):
+        refresh.main(["--world", str(source), "--dataset", str(target), "--subject",
+                      f"computer_science:2026={subject}", "--apply"])
+    assert target.read_bytes() == before
+
+
+def test_subject_only_refresh_preserves_notes_and_clears_old_verification(tmp_path):
+    target = _dataset(tmp_path, ["Subject Only University"])
+    data = json.loads(target.read_text())
+    data["universities"][0].update(rank=15, confidence="high", note="Reviewed partner-award arrangement")
+    target.write_text(json.dumps(data))
+    subject = tmp_path / "subject.csv"
+    subject.write_text("Rank,Institution Name,Country/Territory\n3,Subject Only University,Testland\n")
+    refresh.main(["--world", str(_full_csv(tmp_path)), "--dataset", str(target),
+                  "--subject", f"computer_science:2026={subject}", "--apply"])
+    entry = next(u for u in load_dataset(target).universities if u.university == "Subject Only University")
+    assert "Reviewed partner-award arrangement" in entry.note
+    assert entry.rank is None and not entry.verified and entry.confidence == "low"
+
+
+def _subject_book(tmp_path, tables):
+    from openpyxl import Workbook
+    book = Workbook()
+    book.remove(book.active)
+    for label, rows in [("Engineering & Technology", []), *tables]:
+        sheet = book.create_sheet(label[:31])
+        sheet.append(["2026 QS World University Rankings by Subject"])
+        sheet.append([label])
+        sheet.append([None])
+        sheet.append(["2026", "2025", "INSTITUTION", "COUNTRY/TERRITORY"])
+        for rank, name, country in rows:
+            sheet.append([rank, None, name, country])
+    path = tmp_path / "subjects.xlsx"
+    book.save(path)
+    book.close()
+    return path
+
+
+def test_official_workbook_preserves_individual_subject_ranks(tmp_path):
+    target = _dataset(tmp_path, ["Testfield University"])
+    book = _subject_book(tmp_path, [
+        ("Computer Science & Information Systems", [(2, "Testfield University", "Testland")]),
+        ("Data Science and Artificial Intelligence", [(3, "Testfield University", "Testland")]),
+    ])
+    refresh.main(["--world", str(_full_csv(tmp_path)), "--subject-workbook", str(book),
+                  "--dataset", str(target), "--apply"])
+    university = load_dataset(target).universities[0]
+    assert university.fields == ["engineering", "computer_science"]
+    assert university.subject_ranks["Computer Science & Information Systems"].rank == 2
+    assert university.subject_ranks["Data Science and Artificial Intelligence"].rank == 3
+    assert all(r.year == 2026 and r.source == "subjects.xlsx" for r in university.subject_ranks.values())
+
+
+def test_workbook_does_not_merge_distinct_parenthetical_campuses(tmp_path):
+    target = _dataset(tmp_path, ["Testfield University"])
+    book = _subject_book(tmp_path, [("Computer Science & Information Systems", [
+        (2, "Campus University", "Testland"), (3, "Campus University (Beijing)", "Testland"),
+    ])])
+    refresh.main(["--world", str(_full_csv(tmp_path)), "--subject-workbook", str(book),
+                  "--dataset", str(target), "--apply"])
+    names = [u.university for u in load_dataset(target).universities]
+    assert "Campus University" in names and "Campus University (Beijing)" in names
+
+
+def test_source_names_make_repeated_refresh_idempotent(tmp_path):
+    target = _dataset(tmp_path, ["Testfield University"])
+    source = _full_csv(tmp_path)
+    args = ["--world", str(source), "--dataset", str(target), "--apply"]
+    refresh.main(args)
+    before = target.read_bytes()
+    refresh.main(args)
+    assert target.read_bytes() == before
+
+
+def test_bad_workbook_keeps_dataset_intact(tmp_path):
+    target = _dataset(tmp_path, ["Testfield University"])
+    source = _full_csv(tmp_path)
+    book = tmp_path / "bad.xlsx"
+    book.write_bytes(b"not a spreadsheet")
+    before = target.read_bytes()
+    with pytest.raises(SystemExit):
+        refresh.main(["--world", str(source), "--subject-workbook", str(book),
+                      "--dataset", str(target), "--apply"])
+    assert target.read_bytes() == before
+
+
+def test_repeat_refresh_does_not_count_subject_only_rows_as_missing_world_rows(tmp_path):
+    target = _dataset(tmp_path, ["Testfield University"])
+    source = _full_csv(tmp_path)
+    book = _subject_book(tmp_path, [("Computer Science & Information Systems", [
+        (i + 1, f"Subject Only-{i}", "Testland") for i in range(8)
+    ])])
+    args = ["--world", str(source), "--subject-workbook", str(book), "--dataset", str(target), "--apply"]
+    refresh.main(args)
+    assert len(load_dataset(target).universities) == 12
+    before = target.read_bytes()
+    refresh.main(args)
+    assert target.read_bytes() == before
+
+
+def test_repeated_refresh_preserves_notes_for_institutions_absent_from_all_sources(tmp_path):
+    target = _dataset(tmp_path, ["Absent University"])
+    data = json.loads(target.read_text())
+    data["universities"][0]["note"] = "Reviewed historical exception"
+    target.write_text(json.dumps(data))
+    source = _full_csv(tmp_path)
+    args = ["--world", str(source), "--dataset", str(target), "--apply"]
+    refresh.main(args)
+    before = target.read_bytes()
+    refresh.main(args)
+    assert target.read_bytes() == before
+    entry = next(u for u in load_dataset(target).universities if u.university == "Absent University")
+    assert "Reviewed historical exception" in entry.note

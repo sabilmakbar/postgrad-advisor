@@ -58,12 +58,13 @@ def _uni(name, country, continent, rank, fields, *, base_score=50.0, tilt=0.0):
 def test_code_selects_rows_and_model_only_annotates(monkeypatch):
     state = _state()
     selected, notes = prefilter(state, DATASET)
-    assert notes == [] and len(selected) == 9
-    calls = _wire(monkeypatch, [f"fit-{i}" for i in range(9)])
+    assert notes == [] and len(selected) >= MIN_SIZE
+    expected = selected[:MAX_SIZE]
+    calls = _wire(monkeypatch, [f"fit-{i}" for i in range(len(expected))])
     out = shortlist_node(state)
     assert len(calls) == 1
-    assert [e.university for e in out["shortlist"]] == [u.university for u in selected]
-    assert [e.why_it_fits for e in out["shortlist"]] == [f"fit-{i}" for i in range(9)]
+    assert [e.university for e in out["shortlist"]] == [u.university for u in expected]
+    assert [e.why_it_fits for e in out["shortlist"]] == [f"fit-{i}" for i in range(len(expected))]
     assert {e.university for e in out["shortlist"]} <= DATASET_NAMES
     assert out["handed_off"] is True
     prompt = "\n".join(text for _, text in calls[0])
@@ -71,10 +72,36 @@ def test_code_selects_rows_and_model_only_annotates(monkeypatch):
     assert selected[0].university in prompt
 
 
+def test_imported_unknown_coverage_is_not_excluded_or_claimed_verified(monkeypatch):
+    pool = [_uni(f"Imported-{i}", "Malaysia", "Asia", i + 1, []) for i in range(8)]
+    for entry in pool:
+        entry.degree_types = []
+    monkeypatch.setattr(shortlist_mod, "load_dataset", lambda: ProgramDataset(
+        source="test import", retrieved="2026-11-02", universities=pool
+    ))
+    calls = _wire(monkeypatch, ["availability needs verification"] * 8)
+    result = shortlist_node(_state(target_regions=["Malaysia"]))
+    assert len(result["shortlist"]) == 8
+    assert "unverified subject coverage or degree availability" in result["messages"][-1][1]
+    prompt = "\n".join(text for _, text in calls[0])
+    assert "observed subject tags: unknown" in prompt
+    assert "degree availability: unverified" in prompt
+
+
+def test_unknown_subject_candidate_remains_eligible_with_eight_known_matches():
+    pool = [_uni(f"Known-{i}", "Malaysia", "Asia", i + 1, ["computer_science"]) for i in range(8)]
+    unknown = _uni("Unknown", "Malaysia", "Asia", 1, [], base_score=100)
+    unknown.degree_types = []
+    selected, _ = prefilter(_state(target_regions=["Malaysia"]), [*pool, unknown])
+    assert len(selected) == 9 and unknown in selected
+    assert all(u.fields for u in selected[:8])  # observed field evidence controls ordering
+
+
 @pytest.mark.parametrize("count", [0, 3, 9, 15])
 def test_annotation_count_never_changes_selection(monkeypatch, count):
     state = _state()
     selected, _ = prefilter(state, DATASET)
+    selected = selected[:MAX_SIZE]
     calls = _wire(monkeypatch, [f"annotation-{i}" for i in range(count)])
     out = shortlist_node(state)
     assert len(calls) == 1
@@ -181,7 +208,12 @@ def test_missing_tilt_keeps_base_score_with_zero_adjustment():
 
 def test_missing_score_keeps_published_rank_context(monkeypatch):
     state = _state()
-    candidates, _ = prefilter(state, DATASET)
+    kaist_row = next(u for u in DATASET if u.university == "KAIST")
+    pool = [_uni(f"Scored-{i}", "Japan", "Asia", i + 1, ["computer_science"]) for i in range(8)] + [kaist_row]
+    monkeypatch.setattr(shortlist_mod, "load_dataset", lambda: ProgramDataset(
+        source="score fixture", retrieved=None, universities=pool
+    ))
+    candidates, _ = prefilter(state, pool)
     assert candidates[-1].university == "KAIST"
     _wire(monkeypatch, ["fit"] * len(candidates))
     out = shortlist_node(state)
@@ -271,8 +303,10 @@ def test_thin_pool_still_gets_one_annotation_call(monkeypatch):
 def test_field_aliases_resolve_before_matching():
     ai, ai_notes = prefilter(_state(field="AI", target_regions=["Asia"]), DATASET)
     ml, ml_notes = prefilter(_state(field="machine learning", target_regions=["Asia"]), DATASET)
-    assert len(ai) == len(ml) == 9 and ai_notes == ml_notes == []
-    assert all("computer_science" in u.fields for u in ai)
+    cs, cs_notes = prefilter(_state(field="computer science", target_regions=["Asia"]), DATASET)
+    assert ai == ml == cs and len(ai) >= MIN_SIZE
+    assert ai_notes == ml_notes == cs_notes == []
+    assert all("computer_science" in u.fields or not u.fields for u in ai)
 
 
 def test_alias_values_are_dataset_buckets_and_keys_are_not_substrings():
@@ -284,7 +318,7 @@ def test_alias_values_are_dataset_buckets_and_keys_are_not_substrings():
 
 def test_widening_distinguishes_unresolved_absent_and_few():
     _, unresolved = prefilter(_state(field="basket weaving", target_regions=["Europe"]), DATASET)
-    _, absent = prefilter(_state(field="AI", target_regions=["Africa"]), DATASET)
+    _, absent = prefilter(_state(field="AI", target_regions=["Africa"]), SPARSE)
     _, few = prefilter(_state(field="computer science", target_regions=["Europe"]), SPARSE)
     assert "nothing in the dataset is classified" in unresolved[0]
     assert "rather than field fit" in unresolved[0]

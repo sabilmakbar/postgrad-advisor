@@ -12,6 +12,7 @@ from app.prompts import (
     FIELD_UNRESOLVED,
     PERSONA,
     SHORTLIST_INSTRUCTIONS,
+    UNVERIFIED_PROGRAMME_COVERAGE,
 )
 from app.state import InterviewState, ShortlistEntry
 
@@ -158,7 +159,7 @@ def prefilter(
     Widens explicitly when fewer than MIN_SIZE match — field relaxed first,
     then region (AC 3). Returns (rank-sorted candidates, widening notes)."""
     degree = _DEGREE_MAP[state.degree_intent]
-    pool = [u for u in universities if degree in u.degree_types]
+    pool = [u for u in universities if not u.degree_types or degree in u.degree_types]
     in_region = [u for u in pool if _region_match(state.target_regions, u)]
     exact = [u for u in in_region if _field_match(state.field, u)]
     canonical, aliased = _resolve_field(state.field)
@@ -166,7 +167,8 @@ def prefilter(
         _canonical_field_match(canonical, u) for u in pool
     )
 
-    candidates, notes = exact, []
+    candidates = exact + [u for u in in_region if not u.fields]
+    notes = []
     if len(exact) < MIN_SIZE:
         if not exists_in_dataset:
             notes.append(FIELD_UNRESOLVED)
@@ -222,10 +224,13 @@ def shortlist_node(state: InterviewState) -> dict:
     """Filter and rank in code, then ask the LLM to annotate selected rows."""
     candidates, notes = prefilter(state, load_dataset().universities)
     selected = candidates[:MAX_SIZE]
+    if any(not u.fields or not u.degree_types for u in selected):
+        notes.append(UNVERIFIED_PROGRAMME_COVERAGE)
 
     lines = "\n".join(
         f"- {u.university} — {u.country} ({u.continent}); {_rank_context(u)};"
-        f" fields: {', '.join(u.fields)}"
+        f" observed subject tags: {', '.join(u.fields) or 'unknown'};"
+        f" degree availability: {'recorded' if u.degree_types else 'unverified'}"
         for u in selected
     )
     profile = (

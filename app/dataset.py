@@ -1,4 +1,4 @@
-"""Static QS-2026 university snapshot: schema + loader (AD-3: rankings only)."""
+"""Generated QS institution snapshot: schema and loader."""
 
 import re
 from pathlib import Path
@@ -24,16 +24,25 @@ REGION_ALIASES = {
 }
 
 
+class SubjectRanking(BaseModel):
+    rank: int | str
+    year: int
+    source: str
+    sha256: str
+
+
 class University(BaseModel):
     university: str
+    source_name: str | None = None
     country: str
     continent: Continent
     # point rank, a QS band string like "801-850", or None = exists but unranked
     # in this QS cycle (see `note` for why)
     rank: int | str | None
     rank_scope: Literal["world", "regional"]
-    fields: list[str] = Field(min_length=1)
-    degree_types: list[DegreeType] = Field(min_length=1)
+    fields: list[str]  # empty = subject coverage unknown, never evidence of absence
+    degree_types: list[DegreeType]  # empty = degree availability unverified
+    subject_ranks: dict[str, SubjectRanking] = Field(default_factory=dict)
     # Derived by scripts/ingest_qs.py from the QS indicator scores, never hand
     # edited. base_score is the QS weighted composite (0-100, comparable across
     # the whole list including banded ranks); tilt is employer reputation minus
@@ -55,6 +64,7 @@ class University(BaseModel):
 class ProgramDataset(BaseModel):
     source: str
     retrieved: str | None  # set by the PM's web verification pass, not the executor
+    ranking_year: int | None = None
     universities: list[University]
 
     @model_validator(mode="after")

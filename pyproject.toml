@@ -18,7 +18,11 @@ dependencies = [
 ]
 
 [dependency-groups]
+data = [
+    "openpyxl>=3.1.5",
+]
 dev = [
+    {include-group = "data"},
     "pytest>=9.1.1",
 ]
 

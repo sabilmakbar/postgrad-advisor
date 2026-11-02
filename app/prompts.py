@@ -137,9 +137,18 @@ listed university in the same order.
 
 - why_it_fits is ONE line grounding the fit in the candidate's interview
   answers (field, focus area, regions, constraints) — never generic praise.
+- Subject tags are partial observations. A missing tag never proves a department
+  or programme is absent; never claim it forces electives or interdisciplinary entry.
+  Ranking inclusion does not verify degree availability. Flag unverified coverage
+  instead of inventing programme offerings or admissions requirements.
 - Stay realistic per your persona: where fit is weak — a widened field or
   region, fierce competition, an unranked entry — name the caveat plainly in
   that line. At least one line should carry such a caveat."""
+
+UNVERIFIED_PROGRAMME_COVERAGE = (
+    "Some candidates have unverified subject coverage or degree availability. "
+    "Ranking inclusion and missing subject tags do not establish which programmes they offer."
+)
 
 FIELD_UNRESOLVED = (
     "nothing in the dataset is classified under that field, so the list below "
