@@ -452,6 +452,16 @@ def test_page_keeps_turn_status_transient():
     assert "state.timedOut = true;" in page and "controller.abort();" in page
 
 
+def test_user_text_selection_contrasts_with_the_bubble_in_both_themes():
+    page = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+
+    assert "--user-selection-bg: #fef3c7;" in page
+    assert "--user-selection-fg: #18181b;" in page
+    assert "--user-selection-bg: #164e63;" in page
+    assert "--user-selection-fg: #f0f9ff;" in page
+    assert ".user .bubble::selection" in page
+
+
 def test_message_without_session_is_rejected(client):
     response = client(FakeGraph()).post("/chat", json={"message": "hello"})
     assert response.status_code == 400
